@@ -50,7 +50,7 @@ warmup_ratio: 0.1
 
 bf16: auto
 tf32: true
-gradient_checkpointing: true
+activation_checkpointing: true
 
 logging_steps: 1
 saves_per_epoch: 1

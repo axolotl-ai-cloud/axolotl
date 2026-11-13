@@ -70,6 +70,9 @@ tf32: true
 attn_implementation: flash_attention_2
 
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   cpu_ram_efficient_loading: true
@@ -77,7 +80,6 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true
 
 adapter_checkpoint_format: sharded
 adapter_final_save_format: gather

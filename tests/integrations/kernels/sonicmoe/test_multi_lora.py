@@ -18,7 +18,9 @@ from axolotl.integrations.kernels.libs.sonicmoe.multi_lora import (
     materialize_multi_lora_experts,
 )
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
+pytestmark = pytest.mark.skipif(not gpu_available(), reason="GPU required")
 
 
 def _grouped_gemm(hidden, w_eff, group_ids, token_idx, out_dim):
@@ -33,7 +35,7 @@ def _grouped_gemm(hidden, w_eff, group_ids, token_idx, out_dim):
 @pytest.mark.parametrize("E,T,r", [(4, 3, 8), (3, 1, 4), (5, 4, 16)])
 def test_multilora_materialize_matches_per_tenant(E, T, r):
     torch.manual_seed(0)
-    dev, dt = "cuda", torch.float32
+    dev, dt = DEVICE_TYPE, torch.float32
     out_dim, in_dim, M = 12, 16, 32
     base = torch.randn(E, out_dim, in_dim, device=dev, dtype=dt)
     A = (torch.randn(T, E, r, in_dim, device=dev, dtype=dt) * 0.1).requires_grad_(True)
@@ -71,7 +73,7 @@ def test_multilora_materialize_matches_per_tenant(E, T, r):
 def test_t1_reduces_to_single_adapter():
     """T==1 must produce exactly the single-adapter MoELoRAMaterialize result."""
     torch.manual_seed(1)
-    dev, dt = "cuda", torch.float32
+    dev, dt = DEVICE_TYPE, torch.float32
     E, r, out_dim, in_dim = 4, 8, 12, 16
     base = torch.randn(E, out_dim, in_dim, device=dev, dtype=dt)
     # single-adapter PEFT layout: A [r*E, in], B [out, r*E]
@@ -93,7 +95,7 @@ def test_t1_reduces_to_single_adapter():
 
 
 def test_combined_ids_routing():
-    dev = "cuda"
+    dev = DEVICE_TYPE
     T = 3
     expert = torch.tensor([0, 2, 1, 0], device=dev, dtype=torch.int32)
     tenant = torch.tensor([1, 0, 2, 1], device=dev, dtype=torch.int32)  # per token

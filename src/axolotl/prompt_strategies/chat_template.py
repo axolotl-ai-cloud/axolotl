@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from jinja2.exceptions import TemplateError
 from pydantic import BaseModel
-from transformers import ProcessorMixin
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
@@ -21,6 +20,9 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
 if TYPE_CHECKING:
+    # processing_utils imports modeling_utils, whose torchao quantizer initializes CUDA
+    from transformers import ProcessorMixin
+
     from axolotl.utils.mistral import HFMistralTokenizer
 
 # Configure the logger
@@ -110,7 +112,7 @@ class ChatTemplatePrompter(Prompter):
         self.field_tools = field_tools
         self.field_thinking = field_thinking
         self.tokenizer = tokenizer
-        self.processor: ProcessorMixin | None = processor
+        self.processor: "ProcessorMixin | None" = processor
         self.chat_template = chat_template
         self.chat_template_kwargs = chat_template_kwargs or {}
         self.template_thinking_key: str = template_thinking_key or "reasoning_content"
@@ -124,10 +126,10 @@ class ChatTemplatePrompter(Prompter):
     def build_prompt(
         self,
         conversation: list[dict],
-        add_generation_prompt=False,
-        images=None,
-        tools=None,
-        real_last_index=None,
+        add_generation_prompt: bool = False,
+        images: list | None = None,
+        tools: list[dict] | None = None,
+        real_last_index: int | None = None,
     ):
         """
         Build a prompt from a conversation.
@@ -137,6 +139,8 @@ class ChatTemplatePrompter(Prompter):
             add_generation_prompt: Whether to add a generation prompt.
             images: A list of images. (optional)
             tools: A list of tools. (optional)
+            real_last_index: Index of the conversation's last turn when rendering a
+                prefix of it. (optional)
         """
         chat_template_kwargs = {
             "chat_template": self.chat_template,

@@ -83,6 +83,16 @@ def _fp8_train_backend() -> str:
 _FWD_PACK_KEYS = ("fp8_gate_up_fwd", "fp8_down_fwd")
 
 
+def _marlin_fp8_shape_ok(size_n: int, size_k: int) -> bool:
+    """Whether a marlin W8A16 block-fp8 pack fits ``size_n`` outputs x ``size_k`` reduction.
+
+    Both must be whole 128-blocks: the 128x128 scale grid expands to marlin's group-128 scales
+    column by column, so a partial block would misplace or fail the scales. The reduction must
+    also span >=2 scale groups (a single group infers channelwise group_size=-1, not
+    instantiated for fp8)."""
+    return size_n % 128 == 0 and size_k % 128 == 0 and size_k > 128
+
+
 def _fp8_fwd_pack(wq, ws, cache, which, probe_only=False, no_cache=False):
     """Marlin W8A16 forward pack for one projection: cached under the headroom opt-in
     (AXOLOTL_MARLIN_CACHE_MIN_FREE_GB), else built TRANSIENTLY for this GEMM and freed on
@@ -98,9 +108,7 @@ def _fp8_fwd_pack(wq, ws, cache, which, probe_only=False, no_cache=False):
             return got
     if probe_only:
         return None
-    # marlin tiling: out(N) %64, reduction(K) %16; reduction must span >=2 scale groups (a
-    # single group infers channelwise group_size=-1, not instantiated for fp8).
-    if wq.size(1) % 64 or wq.size(2) % 16 or wq.size(2) <= 128:
+    if not _marlin_fp8_shape_ok(wq.size(1), wq.size(2)):
         return None
     try:
         from .marlin_w4a16 import load_ext, marlin_w4a16_available
@@ -249,10 +257,8 @@ def _build_fp8_dx_packs(gate_up, down, dx_cache):
                 ("fp8_gate_up_dxT", gate_up),
                 ("fp8_down_dxT", down),
             ):
-                # marlin tiling: dX output dim (fwd K) %64, reduction (fwd N) %16, and the
-                # reduction must span >=2 scale groups (single group infers channelwise
-                # group_size=-1, not instantiated for fp8).
-                if wq.size(2) % 64 or wq.size(1) % 16 or wq.size(1) <= 128:
+                # dX contracts the forward out dim: output = fwd K, reduction = fwd N
+                if not _marlin_fp8_shape_ok(wq.size(2), wq.size(1)):
                     return None, None
                 dx_cache[key] = prepare_blockfp8_dx_weight(
                     wq, ws, ext.gptq_marlin_repack
@@ -382,6 +388,10 @@ def grouped_fp8_moe_train(
     I = down_fp8.shape[2]  # noqa: E741
     dev = hidden.device
     backend = _fp8_train_backend()
+    # DeepGEMM casts activations to fp8 in 128-wide K groups, so both reduction dims (H for
+    # gate_up, I for down) must be 128-aligned; the Triton kernel masks partial blocks.
+    if backend == "deepgemm_fp8" and (H % 128 or I % 128):
+        backend = "blockfp8_triton"
     if not _BACKEND_LOGGED:
         _BACKEND_LOGGED = True
         LOG.info("grouped block-fp8 MoE base-GEMM backend: %s", backend)

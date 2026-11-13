@@ -9,7 +9,10 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
+      - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it
       - "!packages/tree-recurrence/**"
@@ -22,7 +25,10 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
+      - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it
       - "!packages/tree-recurrence/**"
@@ -52,7 +58,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: "pip" # caching pip dependencies
@@ -75,111 +81,11 @@ jobs:
 
   distributed-cpu:
     name: Distributed CPU
-    if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache, pre-commit]
+    if: ${{ !github.event.pull_request.draft && needs.path-filters.outputs.run_distributed_cpu == 'true' }}
+    needs: [prime-cdn-s3-cache, pre-commit, path-filters]
     uses: ./.github/workflows/distributed-cpu.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  pytest:
-    name: PyTest
-    runs-on: ubuntu-latest
-    if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache, pre-commit]
-    strategy:
-      max-parallel: 2
-      fail-fast: false
-      matrix:
-        include: # just run the diagonal to keep it lightweight
-          - python_version: "3.12"
-            pytorch_version: "2.13.0"
-          - python_version: "3.14"
-            pytorch_version: "2.14.1"
-    timeout-minutes: 45
-    env:
-      AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
-
-    steps:
-      - name: cleanup node
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-
-      - name: Check out repository code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p ~/.cache/huggingface/hub
-          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
-          ls -ltr ~/.cache/huggingface/hub/
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python_version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
-          prune-cache: true
-          cache-dependency-glob: "pyproject.toml"
-
-      - name: Install PyTorch
-        run: |
-          uv pip install torch==${{ matrix.pytorch_version }} torchvision
-          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
-
-      - name: Install dependencies
-        run: |
-          uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
-          python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest==9.1.1 pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
-
-      - name: Make sure PyTorch version wasn't clobbered
-        run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
-
-      - name: Ensure axolotl CLI was installed
-        run: |
-          axolotl --help
-
-      - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.1' }}
-        run: |
-          axolotl generate-cli-config-options --check
-
-      - name: Pre-Download dataset fixture
-        run: |
-          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
-
-      - name: Show HF cache
-        run: hf cache ls
-
-      - name: Run tests
-        timeout-minutes: 40
-        run: |
-          pytest -v --durations=10 -n4 --dist loadfile -m "not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 -m "not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
-
-      - name: Show HF cache
-        run: hf cache ls
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests,pytorch-${{ matrix.pytorch_version }}
-          fail_ci_if_error: false
 
   pytest-testmon:
     if: ${{ !github.event.pull_request.draft }}
@@ -213,12 +119,12 @@ jobs:
           ls -ltr ~/.cache/huggingface/hub/
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           prune-cache: true
@@ -236,7 +142,7 @@ jobs:
       - name: Install axolotl from the sdist-built wheel
         run: |
           wheel=$(ls dist/axolotl-*.whl)
-          uv pip install --no-build-isolation "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
+          uv pip install "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest==9.1.1 pytest-retry pytest-sugar pytest-xdist tbparse
 
@@ -289,7 +195,7 @@ jobs:
           fetch-depth: 2
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
@@ -319,19 +225,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  multigpu-paths:
-    name: Multi-GPU path filter
+  path-filters:
+    name: Lane path filters
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
     outputs:
       run_multigpu: ${{ steps.filter.outputs.run_multigpu }}
+      run_distributed_cpu: ${{ steps.filter.outputs.run_distributed_cpu }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows/distributed-cpu.yml
+          sparse-checkout-cone-mode: false
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: filter
         with:
           script: |
             // trailing '/' = prefix, '*' = glob within one path segment, otherwise exact path
-            const PATTERNS = [
+            const MULTIGPU_PATHS = [
               'src/axolotl/core/',
               'src/axolotl/loaders/',
               'src/axolotl/model_support/',
@@ -343,12 +255,16 @@ jobs:
               'src/axolotl/integrations/expert_parallel/',
               'src/axolotl/integrations/context_parallel/',
               'src/axolotl/integrations/cut_cross_entropy/',
+              'src/axolotl/integrations/liger/',
               'src/axolotl/integrations/kernels/',
               'src/axolotl/train.py',
               'src/axolotl/cli/',
               'deepspeed_configs/',
               'tests/e2e/multigpu/',
               'cicd/',
+              '.github/actions/testmon-restore/',
+              '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
               '.github/workflows/multi-gpu-e2e*.yml',
               '.github/workflows/tests.yml',
               'pyproject.toml',
@@ -356,38 +272,207 @@ jobs:
               'scripts/cutcrossentropy_install.py',
               'cicd/Dockerfile*',
             ];
+            const DISTRIBUTED_CPU_PATHS = [
+              'src/axolotl/core/',
+              'src/axolotl/loaders/',
+              'src/axolotl/model_support/',
+              'src/axolotl/monkeypatch/',
+              'src/axolotl/kernels/op_registry.py',
+              'src/axolotl/integrations/__init__.py',
+              'src/axolotl/integrations/base.py',
+              'src/axolotl/integrations/expert_parallel/',
+              'src/axolotl/integrations/context_parallel/',
+              'src/axolotl/integrations/kernels/',
+              'src/axolotl/utils/__init__.py',
+              'src/axolotl/utils/activation_checkpointing.py',
+              'src/axolotl/utils/config/',
+              'src/axolotl/utils/dict.py',
+              'src/axolotl/utils/distributed.py',
+              'src/axolotl/utils/fp32_norms.py',
+              'src/axolotl/utils/freeze.py',
+              'src/axolotl/utils/gradient_clipping.py',
+              'src/axolotl/utils/lora_*.py',
+              'src/axolotl/utils/model_shard_quant.py',
+              'src/axolotl/utils/nf4*.py',
+              'src/axolotl/utils/schemas/',
+              'src/axolotl/train.py',
+              'src/axolotl/cli/merge_lora.py',
+              'src/axolotl/cli/utils/*merge*.py',
+              'tests/conftest.py',
+              'tests/global_state.py',
+              'tests/hf_offline_utils.py',
+              'tests/native_source_fixtures.py',
+              'tests/core/trainers/diffusion_lm/fixtures/',
+              '.github/workflows/distributed-cpu.yml',
+              '.github/workflows/tests.yml',
+              '.coveragerc-distributed',
+              'cicd/pytest_testmon.py',
+              '.github/actions/testmon-restore/',
+              '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
+              'pyproject.toml',
+              'scripts/cutcrossentropy_install.py',
+            ];
+            const LANES = { run_multigpu: MULTIGPU_PATHS, run_distributed_cpu: DISTRIBUTED_CPU_PATHS };
             if (context.eventName !== 'pull_request') {
-              core.info(`event ${context.eventName}: multigpu enabled`);
-              core.setOutput('run_multigpu', 'true');
+              core.info(`event ${context.eventName}: all lanes enabled`);
+              for (const lane of Object.keys(LANES)) core.setOutput(lane, 'true');
               return;
             }
+            // the test files distributed-cpu.yml runs, with the workers and conftest.py beside them
+            const listed = require('fs').readFileSync('.github/workflows/distributed-cpu.yml', 'utf8')
+              .match(/tests\/[\w/]+\.py/g) ?? [];
+            const dirs = [...new Set(listed.map((f) => f.slice(0, f.lastIndexOf('/') + 1)))];
+            DISTRIBUTED_CPU_PATHS.push(...listed, ...dirs.flatMap((d) => [`${d}_*.py`, `${d}conftest.py`]));
             const escape = (s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
             const toRegex = (p) => new RegExp('^' + p.split('*').map(escape).join('[^/]*') + '$');
-            const matches = (file) => PATTERNS.some((p) =>
+            const matches = (patterns, file) => patterns.some((p) =>
               p.endsWith('/') ? file.startsWith(p) : p.includes('*') ? toRegex(p).test(file) : file === p);
             const files = await github.paginate(github.rest.pulls.listFiles, {
               ...context.repo,
               pull_number: context.payload.pull_request.number,
               per_page: 100,
             });
-            const hits = files.flatMap((f) => [f.filename, f.previous_filename]).filter((name) => name && matches(name));
-            core.info(`${files.length} changed file(s); ${hits.length} matched multigpu paths`);
-            for (const hit of hits) core.info(`  ${hit}`);
-            core.setOutput('run_multigpu', String(hits.length > 0));
+            const names = files.flatMap((f) => [f.filename, f.previous_filename]).filter(Boolean);
+            core.info(`${files.length} changed file(s)`);
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: context.payload.pull_request.number,
+            });
+            const fullCpu = pr.labels.some(label =>
+              ['run-cpu-full', 'run-tests-full'].includes(label.name));
+            for (const [lane, patterns] of Object.entries(LANES)) {
+              const hits = names.filter((name) => matches(patterns, name));
+              core.info(`${lane}: ${hits.length} matched`);
+              for (const hit of hits) core.info(`  ${hit}`);
+              core.setOutput(lane, String(hits.length > 0 ||
+                (lane === 'run_distributed_cpu' && fullCpu) ||
+                (lane === 'run_multigpu' && pr.labels.some(label => label.name === 'run-tests-full'))));
+            }
+
+  modal-image:
+    name: Modal image build (py${{ matrix.python_version }}, torch ${{ matrix.pytorch }}${{ matrix.axolotl_extras && format(', {0}', matrix.axolotl_extras) || '' }})
+    # Builds the single-GPU e2e images without the GPU label. Same-repo branches only: fork
+    # code must not reach the self-hosted Modal runners before a maintainer adds the label.
+    if: >
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            python_version: "3.12"
+            pytorch: 2.13.0
+            axolotl_extras:
+          - cuda: 130
+            python_version: "3.14"
+            pytorch: 2.14.1
+            axolotl_extras:
+          - cuda: 130
+            python_version: "3.14"
+            pytorch: 2.14.1
+            axolotl_extras: blackwell
+          - cuda: 132
+            python_version: "3.14"
+            pytorch: 2.15.0
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.6.3 jinja2
+      # Same Dockerfile and builder version as the docker-e2e and multi-gpu-e2e jobs (cicd/ci_image.py),
+      # so a labeled run reuses this build
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras }}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2026.10" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
+      - name: Image inputs match main's
+        if: env.IMAGE_REF == 'refs/heads/main'
+        run: echo "DEPS_HASH=$DEPS_HASH matches main; main's e2e run builds this image, skipping"
+      - name: Build the image and start it on Modal
+        if: env.IMAGE_REF != 'refs/heads/main'
+        run: modal run -m cicd.image_build
 
   check-gpu-label:
     # Deferred so a label added while CPU jobs run is seen without a rerun
     needs: [pre-commit, distributed-cpu, pytest-testmon, sdist]
+    # !failure() rather than the implicit success(): distributed-cpu skips when no path matches
+    if: ${{ !cancelled() && !failure() && !github.event.pull_request.draft }}
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
     needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label]
-    if: needs.check-gpu-label.outputs.enabled == 'true'
+    if: ${{ !cancelled() && !failure() && needs.check-gpu-label.outputs.enabled == 'true' }}
     uses: ./.github/workflows/docker-e2e.yml
     secrets: inherit
 
   multi-gpu-e2e:
-    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
-    if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
+    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label, path-filters]
+    if: >-
+      !cancelled() && !failure() && github.event_name == 'pull_request' &&
+      needs.check-gpu-label.outputs.enabled == 'true' && needs.path-filters.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit
+
+  changed-tests:
+    name: Changed tests report
+    # Preview of changed-tests.yml, whose status also waits for Slow CPU / Slow GPU runs
+    needs: [pytest-testmon, distributed-cpu, sdist, docker-e2e, multi-gpu-e2e]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Report changed tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python cicd/verify_changed_tests.py --repo "$GITHUB_REPOSITORY" \
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --summary "$GITHUB_STEP_SUMMARY" --annotate \
+            --json "$RUNNER_TEMP/changed-tests.json"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: changed-tests
+          path: ${{ runner.temp }}/changed-tests.json
+          if-no-files-found: ignore
+          retention-days: 14
+          # gpu-label.yml re-runs this workflow, and a re-run re-uploads the name
+          overwrite: true

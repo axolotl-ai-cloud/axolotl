@@ -12,9 +12,13 @@ import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.core.builders.base import TrainerBuilderBase, _fsdp_training_config
 from axolotl.core.trainers import AxolotlKTOTrainer, AxolotlTrainer
 from axolotl.model_support import ModelStrategies
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+)
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
@@ -121,14 +125,16 @@ class TestGradientCheckpointingConfig:
         training_args_kwargs = _gradient_checkpointing_kwargs(
             SimpleNamespace(
                 layer_offloading=False,
-                activation_offloading="hidden_states",
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": False},
+                activation_checkpointing={
+                    "enabled": True,
+                    "reentrant": False,
+                    "offload": {"hidden_states": "cpu"},
+                },
             )
         )
 
-        assert training_args_kwargs["gradient_checkpointing"] is True
-        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+        assert training_args_kwargs[CHECKPOINTING_ARG] is True
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {
             "use_reentrant": False
         }
         assert training_args_kwargs["activation_offloading"] == "hidden_states"
@@ -137,17 +143,68 @@ class TestGradientCheckpointingConfig:
         training_args_kwargs = _gradient_checkpointing_kwargs(
             SimpleNamespace(
                 layer_offloading=False,
-                activation_offloading="hidden_states",
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_checkpointing={
+                    "enabled": True,
+                    "reentrant": True,
+                    "offload": {"hidden_states": "cpu"},
+                },
             )
         )
 
-        assert training_args_kwargs["gradient_checkpointing"] is True
-        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
-            "use_reentrant": True
-        }
+        assert training_args_kwargs[CHECKPOINTING_ARG] is True
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {"use_reentrant": True}
         assert "activation_offloading" not in training_args_kwargs
+
+    def test_fsdp_implementation_leaves_transformers_checkpointing_off(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_checkpointing={"enabled": True, "implementation": "fsdp"},
+            )
+        )
+
+        assert training_args_kwargs[CHECKPOINTING_ARG] is False
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {
+            "use_reentrant": False
+        }
+
+    def test_fsdp_implementation_runs_hidden_states_offload_through_the_trainer(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_checkpointing={
+                    "enabled": True,
+                    "implementation": "fsdp",
+                    "offload": {"hidden_states": "cpu"},
+                },
+            )
+        )
+
+        assert training_args_kwargs[CHECKPOINTING_ARG] is False
+        assert training_args_kwargs["activation_offloading"] == "hidden_states"
+
+    @pytest.mark.parametrize(
+        ("implementation", "expected"),
+        [
+            ("fsdp", {"reshard_after_forward": True, "activation_checkpointing": True}),
+            ("hf", {"reshard_after_forward": True}),
+        ],
+    )
+    def test_fsdp_training_config_carries_fsdp_checkpointing(
+        self, implementation, expected
+    ):
+        cfg = DictDefault(
+            fsdp_config={"reshard_after_forward": True},
+            activation_checkpointing={
+                "enabled": True,
+                "implementation": implementation,
+            },
+        )
+
+        fsdp_config = _fsdp_training_config(cfg)
+
+        assert dict(fsdp_config) == expected
+        assert "activation_checkpointing" not in cfg.fsdp_config
 
 
 def _reward_dataset():
@@ -176,6 +233,15 @@ class TestHFCausalTrainerBuilder:
     """
     TestCase class for SFT trainer builder
     """
+
+    def test_persistent_workers_reach_training_arguments(
+        self, sft_cfg, model, tokenizer
+    ):
+        sft_cfg["dataloader_persistent_workers"] = True
+
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+
+        assert trainer.args.dataloader_persistent_workers is True
 
     def test_training_arguments(self, sft_cfg, model, tokenizer):
         builder = HFCausalTrainerBuilder(sft_cfg, model, tokenizer)
@@ -498,6 +564,20 @@ def fixture_inductor_config_snapshot():
 class TestApplyTorchCompileOptions:
     # Runtime apply path; schema-layer validation is tested in TestTorchCompileValidation.
 
+    @pytest.fixture(autouse=True)
+    def _restore_dynamo_state(self):
+        # _configure_torch_compile sets these process-wide, and a MagicMock cfg is truthy
+        # for gradient_checkpointing, which would turn dynamo's LRU cache off for good.
+        with (
+            patch("torch._C._dynamo.eval_frame._set_lru_cache"),
+            _dynamo_cfg.patch(
+                suppress_errors=_dynamo_cfg.suppress_errors,
+                accumulated_recompile_limit=_dynamo_cfg.accumulated_recompile_limit,
+                recompile_limit=_dynamo_cfg.recompile_limit,
+            ),
+        ):
+            yield
+
     def test_allowlisted_flag_is_applied(self, inductor_config_snapshot):
         assert _inductor_cfg.coordinate_descent_tuning is False
         TrainerBuilderBase._apply_torch_compile_options(
@@ -567,14 +647,18 @@ class TestApplyTorchCompileOptions:
 
     def test_configure_torch_compile_disables_dynamo_lru_under_checkpointing(self):
         builder = MagicMock(spec=TrainerBuilderBase)
-        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=True)
+        builder.cfg = DictDefault(
+            torch_compile=True, activation_checkpointing={"enabled": True}
+        )
         with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
             TrainerBuilderBase._configure_torch_compile(builder, {})
         set_lru.assert_called_once_with(False)
 
     def test_configure_torch_compile_keeps_dynamo_lru_without_checkpointing(self):
         builder = MagicMock(spec=TrainerBuilderBase)
-        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=False)
+        builder.cfg = DictDefault(
+            torch_compile=True, activation_checkpointing={"enabled": False}
+        )
         with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
             TrainerBuilderBase._configure_torch_compile(builder, {})
         set_lru.assert_not_called()
@@ -582,12 +666,8 @@ class TestApplyTorchCompileOptions:
     def test_configure_torch_compile_raises_recompile_limit_for_regional(self):
         builder = MagicMock(spec=TrainerBuilderBase)
         builder.cfg = DictDefault(torch_compile=True, torch_compile_regional=True)
-        before = _dynamo_cfg.recompile_limit
-        try:
-            TrainerBuilderBase._configure_torch_compile(builder, {})
-            assert _dynamo_cfg.recompile_limit >= 64
-        finally:
-            _dynamo_cfg.recompile_limit = before
+        TrainerBuilderBase._configure_torch_compile(builder, {})
+        assert _dynamo_cfg.recompile_limit >= 64
 
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)

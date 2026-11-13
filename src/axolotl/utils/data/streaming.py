@@ -3,19 +3,20 @@
 import functools
 import hashlib
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import pyarrow as pa
 import torch
 from datasets import Dataset
 from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.data.packing import process_pretraining_datasets_for_packing
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.samplers.utils import get_dataset_label_counts
-from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
 LOG = get_logger(__name__)
 
@@ -271,22 +272,22 @@ def encode_packed_streaming(
     # rows get split with stride (overlap)
     train_dataset = ds_wrapper(dataset=Dataset.from_dict(examples))[0]
 
-    train_dataset = process_pretraining_datasets_for_packing(
-        train_dataset,
-        max_seq_length,
-        skip_position_ids=not multipack_attn,
-        # FIXME using attention mask unpad/pad with trainer and packed pretraining is broken atm
-        # workaround by using the position id logic for now in trainer
-        drop_attention_mask=multipack_attn,
+    rows: Union[_FlatRows, _DatasetRows, None] = _flat_rows(
+        train_dataset, collate_fn, max_seq_length, multipack_attn
     )
+    if rows is None:
+        rows = _DatasetRows(train_dataset, collate_fn, max_seq_length, multipack_attn)
+    if len(rows) == 0:
+        # every row in this buffer was outside the sequence length range
+        return {}
 
-    lengths = get_dataset_lengths(train_dataset)
+    lengths = rows.lengths()
     label_counts = label_start_counts = None
     if balance_labels:
         if collate_fn.tokenizer.padding_side != "right":
             raise ValueError("Label-balanced packing requires right padding")
-        if {"labels", "shift_labels"}.intersection(train_dataset.column_names):
-            label_counts, label_start_counts = get_dataset_label_counts(train_dataset)
+        if rows.labeled:
+            label_counts, label_start_counts = rows.label_counts()
         else:
             # Pretraining creates labels from input_ids during collation.
             label_counts = lengths
@@ -294,14 +295,11 @@ def encode_packed_streaming(
 
     if balance_labels:
         digest = hashlib.sha256(str(seed).encode("ascii"))
-        for batch in train_dataset.select_columns(["input_ids"]).iter(batch_size=1024):
-            for ids in batch["input_ids"]:
-                digest.update(len(ids).to_bytes(8, "little"))
-                digest.update(np.asarray(ids, dtype="<i8").tobytes())
+        rows.hash_input_ids(digest)
         seed = int.from_bytes(digest.digest()[:8], "little")
 
     sampler = MultipackBatchSampler(
-        sampler=RandomSampler(train_dataset),
+        sampler=RandomSampler(rows),
         lengths=lengths,
         label_counts=label_counts,
         label_start_counts=label_start_counts,
@@ -318,18 +316,224 @@ def encode_packed_streaming(
 
     for batch in sampler:
         for data in batch:
-            features = train_dataset[data]
-            if "num_truncated_tokens" in features:
-                del features["num_truncated_tokens"]
-            if "overflow_to_sample_mapping" in features:
-                del features["overflow_to_sample_mapping"]
-            if "labels" not in features:
-                features["labels"] = features["input_ids"].copy()
-            collated_features = collate_fn(features)
-
-            for feature in features.keys():
-                if feature == "length":
-                    continue
-                chunked_data[feature].append(collated_features[feature].squeeze(0))
+            for feature, row in rows.pack(data).items():
+                chunked_data[feature].append(row)
 
     return chunked_data
+
+
+class _DatasetRows:
+    """The buffer's rows after the datasets length filter and transforms, packed by
+    the collator."""
+
+    def __init__(
+        self,
+        train_dataset: Dataset,
+        collate_fn,
+        max_seq_length: int,
+        multipack_attn: Optional[bool],
+    ):
+        self.dataset = process_pretraining_datasets_for_packing(
+            train_dataset,
+            max_seq_length,
+            skip_position_ids=not multipack_attn,
+            # FIXME using attention mask unpad/pad with trainer and packed pretraining is broken atm
+            # workaround by using the position id logic for now in trainer
+            drop_attention_mask=multipack_attn,
+        )
+        self.collate_fn = collate_fn
+        self.labeled = bool(
+            {"labels", "shift_labels"}.intersection(self.dataset.column_names)
+        )
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def lengths(self) -> np.ndarray:
+        return get_dataset_lengths(self.dataset)
+
+    def label_counts(self) -> Tuple[np.ndarray, np.ndarray]:
+        return get_dataset_label_counts(self.dataset)
+
+    def hash_input_ids(self, digest) -> None:
+        for batch in self.dataset.select_columns(["input_ids"]).iter(batch_size=1024):
+            for ids in batch["input_ids"]:
+                digest.update(len(ids).to_bytes(8, "little"))
+                digest.update(np.asarray(ids, dtype="<i8").tobytes())
+
+    def pack(self, indices: List[int]) -> Dict[str, torch.Tensor]:
+        features = self.dataset[indices]
+        if "num_truncated_tokens" in features:
+            del features["num_truncated_tokens"]
+        if "overflow_to_sample_mapping" in features:
+            del features["overflow_to_sample_mapping"]
+        if "labels" not in features:
+            features["labels"] = features["input_ids"].copy()
+        collated_features = self.collate_fn(features)
+        return {
+            feature: collated_features[feature].squeeze(0)
+            for feature in features.keys()
+            if feature != "length"
+        }
+
+
+class _FlatRows:
+    """The buffer's rows as flat token arrays and row offsets. Filters, measures,
+    hashes and packs them as ``_DatasetRows`` does, without its per-row and
+    per-token Python work."""
+
+    def __init__(
+        self,
+        collate_fn,
+        names: List[str],
+        flat: Dict[str, np.ndarray],
+        row_starts: np.ndarray,
+        row_lengths: np.ndarray,
+        labeled: bool,
+    ):
+        tokenizer = collate_fn.tokenizer
+        self.names = names
+        self.flat = flat
+        self.row_starts = row_starts
+        self.row_lengths = row_lengths
+        self.labeled = labeled
+        self.multipack_attn = collate_fn.multipack_attn
+        self.multiple = collate_fn.pad_to_multiple_of or 1
+        self.pad_ids = {
+            "input_ids": tokenizer.pad_token_id,
+            "labels": collate_fn.label_pad_token_id,
+            "attention_mask": 0,
+        }
+        self.pad_left = tokenizer.padding_side == "left"
+
+    def __len__(self) -> int:
+        return len(self.row_lengths)
+
+    def lengths(self) -> np.ndarray:
+        return self.row_lengths
+
+    def label_counts(self) -> Tuple[np.ndarray, np.ndarray]:
+        trained = self.flat["labels"] != -100
+        cumulative = np.concatenate(([0], np.cumsum(trained)))
+        ends = self.row_starts + self.row_lengths
+        counts = cumulative[ends] - cumulative[self.row_starts]
+        # the length filter leaves no empty rows
+        return counts, trained[self.row_starts].astype(np.int64)
+
+    def hash_input_ids(self, digest) -> None:
+        input_ids = self.flat["input_ids"]
+        for start, length in zip(
+            self.row_starts.tolist(), self.row_lengths.tolist(), strict=True
+        ):
+            digest.update(length.to_bytes(8, "little"))
+            digest.update(input_ids[start : start + length].astype("<i8").tobytes())
+
+    def pack(self, indices: List[int]) -> Dict[str, torch.Tensor]:
+        lengths = self.row_lengths[indices]
+        positions = np.arange(lengths.sum(), dtype=np.int64) - np.repeat(
+            np.cumsum(lengths) - lengths, lengths
+        )
+        gather = np.repeat(self.row_starts[indices], lengths) + positions
+        pad_len = -len(positions) % self.multiple
+        packed = {}
+        for name in self.names:
+            if name == "position_ids":
+                values = positions
+                pad = np.arange(pad_len, dtype=np.int64)
+            else:
+                values = self.flat[name][gather]
+                if name == "attention_mask" and self.multipack_attn:
+                    values = values * np.repeat(np.arange(1, len(indices) + 1), lengths)
+                pad = np.full(pad_len, self.pad_ids[name], dtype=np.int64)
+            packed[name] = torch.from_numpy(
+                np.concatenate((pad, values) if self.pad_left else (values, pad))
+            )
+        return packed
+
+
+# _DatasetRows drops these; its collator concatenates and pads the flat ones
+_DROPPED_COLUMNS = ("num_truncated_tokens", "overflow_to_sample_mapping")
+_FLAT_COLUMNS = ("input_ids", "labels", "attention_mask")
+
+
+def _flat_rows(
+    train_dataset: Dataset,
+    collate_fn,
+    max_seq_length: int,
+    multipack_attn: Optional[bool],
+) -> Optional[_FlatRows]:
+    """``_FlatRows`` for the tokenized buffer, or None when only ``_DatasetRows``
+    can reproduce its transforms and collator."""
+    tokenizer = collate_fn.tokenizer
+    column_names = train_dataset.column_names
+    # under multipack_attn, process_pretraining_datasets_for_packing swaps the
+    # attention mask for position_ids
+    names = [
+        name
+        for name in column_names
+        if name not in _DROPPED_COLUMNS
+        and not (multipack_attn and name == "attention_mask")
+    ]
+    if (
+        type(collate_fn) is not PretrainingBatchSamplerDataCollatorForSeq2Seq
+        or "input_ids" not in names
+        or not set(names).issubset(_FLAT_COLUMNS)
+        # removing the attention mask raises without one
+        or (multipack_attn and "attention_mask" not in column_names)
+        or tokenizer.model_input_names[0] != "input_ids"
+        or (
+            "attention_mask" in names
+            and "attention_mask" not in tokenizer.model_input_names
+        )
+        or tokenizer.pad_token is None
+        or tokenizer.pad_token_id is None
+        or tokenizer.pad_token_id < 0
+        or tokenizer.padding_side not in ("left", "right")
+        or collate_fn.padding is not True
+        or collate_fn.max_length is not None
+        or collate_fn.return_tensors != "pt"
+        or collate_fn.model is not None
+        or collate_fn.cp_shard is not None
+        or collate_fn.emit_fa_varlen_kwargs
+    ):
+        return None
+
+    # with_format would deep-copy the dataset, and with it the wrapper's tokenizer
+    with train_dataset.formatted_as("arrow"):
+        columns = {name: train_dataset[name].combine_chunks() for name in names}
+    if not all(
+        (pa.types.is_list(column.type) or pa.types.is_large_list(column.type))
+        and pa.types.is_integer(column.type.value_type)
+        and column.null_count == 0
+        and column.flatten().null_count == 0
+        for column in columns.values()
+    ):
+        return None
+    offsets = _row_offsets(columns["input_ids"])
+    # unequal row lengths across columns take the collator's per-column padding
+    if not all(
+        np.array_equal(_row_offsets(column), offsets) for column in columns.values()
+    ):
+        return None
+    flat = {
+        name: column.flatten().to_numpy().astype(np.int64, copy=False)
+        for name, column in columns.items()
+    }
+    labeled = "labels" in flat
+    if multipack_attn:
+        names.append("position_ids")
+    if not labeled:
+        names.append("labels")
+        flat["labels"] = flat["input_ids"]
+
+    row_lengths = np.diff(offsets)
+    # filter_sequences_by_length's default range
+    keep = (row_lengths >= 2) & (row_lengths <= max_seq_length)
+    return _FlatRows(
+        collate_fn, names, flat, offsets[:-1][keep], row_lengths[keep], labeled
+    )
+
+
+def _row_offsets(column: pa.ListArray) -> np.ndarray:
+    offsets = column.offsets.to_numpy().astype(np.int64)
+    return offsets - offsets[0]

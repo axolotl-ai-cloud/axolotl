@@ -886,3 +886,71 @@ def test_bf16_grouped_merge_aware_triton_matches_actual_expert_writer_after_upda
     ]
     assert bool(rank_grouped_calls) is _lora_grouped_mm_supported(x, A1, E)
     assert torch.equal(trained, merged)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA + triton")
+def test_merge_aware_snap_and_writer_agree_under_tf32(monkeypatch):
+    """``tf32: true`` must not move the merged grid: the fused snap accumulates the
+    delta in IEEE fp32, and the unfused snap and the merge writer must match it."""
+    pytest.importorskip("torchao")
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    from axolotl.cli.utils.lora_merge import _build_peft_layer_and_get_delta
+    from axolotl.integrations.kernels.libs.sonicmoe import nvfp4_lora
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+        ieee_fp32_matmul,
+        quantize_nvfp4_merge,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.triton_nvfp4 import (
+        merge_aware_snap_triton,
+        triton_available,
+    )
+
+    if not triton_available():
+        pytest.skip("triton unavailable")
+
+    torch.manual_seed(23)
+    E, N, K, r, scaling = 4, 256, 256, 16, 2.0
+    base = _make_nvfp4_base(E, N, K)
+    w = NVFP4Tensor(
+        base.qdata.cuda(),
+        base.scale.cuda(),
+        16,
+        torch.bfloat16,
+        per_tensor_scale=base.per_tensor_scale.cuda(),
+    )
+    pts = w.per_tensor_scale
+    # fp32 factors, as merge-aware training keeps them; bf16 ones are exact in TF32
+    A = torch.randn(r * E, K, device="cuda") * 0.05
+    B = torch.randn(N, r * E, device="cuda") * 0.05
+    matmul = torch.backends.cuda.matmul
+    previous = matmul.fp32_precision
+    matmul.fp32_precision = "tf32"
+    try:
+        A_3d, B_3d = A.reshape(E, r, K), B.reshape(N, r, E).permute(2, 0, 1)
+        tf32_delta = torch.bmm(B_3d, A_3d)
+        with ieee_fp32_matmul():
+            assert not torch.equal(torch.bmm(B_3d, A_3d), tf32_delta)
+        fused = merge_aware_snap_triton(w, A, B, scaling, pts, 0, E)
+        monkeypatch.setenv("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL", "0")
+        unfused = nvfp4_lora._snapped_chunk(w, A, B, scaling, pts, 0, E)
+        monkeypatch.delenv("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL")
+        dense = w.dequantize(torch.bfloat16)
+        delta = _build_peft_layer_and_get_delta(
+            A,
+            B,
+            {"r": r, "lora_alpha": scaling * r},
+            dense,
+            is_param_wrapper=True,
+            canonical_fp32=True,
+        )
+        assert matmul.fp32_precision == "tf32"
+    finally:
+        matmul.fp32_precision = previous
+    merged = (dense.float() + delta.float()).to(torch.bfloat16)
+    packed, scale = quantize_nvfp4_merge(merged.float(), pts.reshape(-1))
+    written = NVFP4Tensor(
+        packed, scale, 16, torch.bfloat16, per_tensor_scale=pts
+    ).dequantize(torch.bfloat16)
+    assert torch.equal(unfused, fused)
+    assert torch.equal(written, fused)

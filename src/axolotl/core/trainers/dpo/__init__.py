@@ -1,7 +1,10 @@
 """DPO Specific Strategy for training"""
 
 from axolotl.core.trainers.dpo.trainer import AxolotlDPOTrainer
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
+
+LOG = get_logger(__name__)
 
 
 class DPOStrategy:
@@ -41,6 +44,11 @@ class DPOStrategy:
         if cfg.dpo_padding_free is not None:
             training_args_kwargs["padding_free"] = cfg.dpo_padding_free
         if cfg.dpo_use_liger_kernel is not None:
+            if cfg.dpo_use_liger_kernel:
+                LOG.warning(
+                    "`dpo_use_liger_kernel` is deprecated by TRL: DPO scores tokens "
+                    "with its fused LM head, so only Liger's layer kernels apply."
+                )
             training_args_kwargs["use_liger_kernel"] = cfg.dpo_use_liger_kernel
         if cfg.precompute_ref_log_probs is not None:
             training_args_kwargs["precompute_ref_log_probs"] = (

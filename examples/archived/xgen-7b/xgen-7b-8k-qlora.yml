@@ -64,7 +64,7 @@ lr_scheduler: cosine
 learning_rate: 0.00002
 bf16: auto
 tf32: false
-gradient_checkpointing: true
+activation_checkpointing: true
 # stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
 early_stopping_patience: 3

@@ -27,7 +27,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
+pytestmark = pytest.mark.skipif(not gpu_available(), reason="GPU required")
 
 NVFP4Tensor = pytest.importorskip(
     "torchao.prototype.mx_formats.nvfp4_tensor", reason="torchao required"
@@ -42,7 +44,7 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import 
     is_nvfp4_param,
 )
 
-DEV = "cuda"
+DEV = DEVICE_TYPE
 # small but realistic gemma4-MoE-ish shapes (H % 16 == 0, I % 16 == 0)
 E, H, I = 4, 128, 64
 BLOCK = 16

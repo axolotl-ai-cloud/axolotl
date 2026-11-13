@@ -35,7 +35,6 @@ lr_scheduler:
 learning_rate: 0.00001
 bf16: auto
 tf32: true
-gradient_checkpointing:
 resume_from_checkpoint:
 logging_steps: 1
 gptq_groupsize:

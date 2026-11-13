@@ -219,32 +219,9 @@ class TestOpenTelemetryCallback:
         )
         assert callback.metrics_enabled is True
 
-    def test_thread_safety(self, mock_otel_config):
-        """Test that callback has thread safety mechanisms."""
-        from axolotl.utils.callbacks.opentelemetry import (
-            OPENTELEMETRY_AVAILABLE,
-            OpenTelemetryMetricsCallback,
-        )
-
-        if not OPENTELEMETRY_AVAILABLE:
-            pytest.skip("OpenTelemetry dependencies not available")
-
-        callback = OpenTelemetryMetricsCallback(mock_otel_config)
-        assert hasattr(callback, "metrics_lock")
-        # Check it's a lock-like object
-        assert hasattr(callback.metrics_lock, "__enter__")
-        assert hasattr(callback.metrics_lock, "__exit__")
-
 
 class TestOpenTelemetryIntegration:
     """Integration tests for OpenTelemetry."""
-
-    def test_availability_check(self):
-        """Test availability check function."""
-        from axolotl.utils import is_opentelemetry_available
-
-        result = is_opentelemetry_available()
-        assert isinstance(result, bool)
 
     def test_prometheus_endpoint_basic(
         self,

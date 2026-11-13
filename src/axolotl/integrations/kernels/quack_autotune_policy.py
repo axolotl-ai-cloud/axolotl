@@ -32,6 +32,7 @@ from axolotl.integrations.kernels.autotune_cache import (
 )
 from axolotl.integrations.kernels.autotune_profiles import (
     _quack_fields,
+    compile_quack_in_process,
     noop_quack_gpu_warmup,
 )
 from axolotl.integrations.kernels.sonicmoe_autotune import sonicmoe_autotuners
@@ -135,7 +136,9 @@ def bucket_key(
     return tuple(key) + (marker,)
 
 
-def _rule(tile_m, tile_n, cluster_m, cluster_n, persistent, gather) -> dict[str, Any]:
+def _rule(
+    tile_m, tile_n, cluster_m, cluster_n, persistent, gather, swap_ab=False
+) -> dict[str, Any]:
     return {
         "tile_m": tile_m,
         "tile_n": tile_n,
@@ -144,8 +147,21 @@ def _rule(tile_m, tile_n, cluster_m, cluster_n, persistent, gather) -> dict[str,
         "is_dynamic_persistent": persistent,
         "use_tma_gather": gather,
         "pingpong": False,
-        "swap_ab": False,
+        "swap_ab": swap_ab,
     }
+
+
+def _rows_per_expert(args: dict[str, Any]) -> float | None:
+    """Routed rows per local expert of a varlen-M call, or None for any other call."""
+    cu = args.get("cu_seqlens_m")
+    if not isinstance(cu, torch.Tensor) or cu.shape[0] < 2:
+        return None
+    rows = args.get("A_idx")
+    if not isinstance(rows, torch.Tensor):
+        rows = args.get("A")
+    if not isinstance(rows, torch.Tensor):
+        return None
+    return rows.shape[0] / (cu.shape[0] - 1)
 
 
 def heuristic_fields(kernel: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -161,11 +177,28 @@ def heuristic_fields(kernel: str, args: dict[str, Any]) -> dict[str, Any]:
         if n is None and isinstance(b, torch.Tensor):
             n = b.shape[-1]
         k = b.shape[-2] if isinstance(b, torch.Tensor) and b.ndim >= 2 else None
+        varlen_k = args.get("cu_seqlens_k") is not None
+        rank_rows = (
+            varlen_k
+            and isinstance(out, torch.Tensor)
+            and out.ndim >= 2
+            and out.shape[-2] <= 128
+        )
+        if rank_rows and not gather:
+            # LoRA grads with r rows: swapping puts the wide side on the tile's M
+            return _rule(256, 64, 2, 1, True, False, swap_ab=True)
         if n is not None and n <= 128:
-            varlen_k = args.get("cu_seqlens_k") is not None
-            return _rule(128, 64, 2 if varlen_k else 1, 1, True, gather)
+            if varlen_k and not gather:
+                return _rule(256, 64, 2, 1, True, False)
+            # tma_gather loses on these narrow tiles
+            return _rule(128, 64, 1, 1, True, False)
         if k is not None and k <= 128:
-            return _rule(128, 256, 1, 2, False, gather)
+            rows = _rows_per_expert(args)
+            if rows is None:
+                return _rule(128, 256, 1, 2, False, gather)
+            if rows <= 1024:
+                return _rule(128, 256, 1, 1, False, gather)
+            return _rule(256, 256, 2, 1, False, gather)
     return _rule(256, 256, 2, 1, True, gather)
 
 
@@ -395,6 +428,7 @@ def install_quack_key_policy(buckets: str = "pow2", tune: bool = True) -> int:
         if not is_quack or not hasattr(tuner, "prune_configs"):
             continue
         noop_quack_gpu_warmup(tuner)
+        compile_quack_in_process(tuner)
         policy = getattr(tuner, "_axolotl_key_policy", None)
         if policy is not None:
             policy.buckets, policy.tune = buckets, tune

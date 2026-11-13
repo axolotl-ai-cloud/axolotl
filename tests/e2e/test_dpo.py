@@ -54,8 +54,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )
@@ -104,8 +103,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )
@@ -157,8 +155,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )
@@ -207,8 +204,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )
@@ -260,8 +256,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )
@@ -332,8 +327,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )

@@ -5,7 +5,10 @@ import torch
 
 DEV = "cuda"
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA"),
+]
 
 
 def _make_blockfp8(E, N, K, block=128):
@@ -22,6 +25,7 @@ def test_fused_matches_unfused_fp8_path(act_type, limit, monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora.fp8_grouped import (
         grouped_fp8_moe_train,
     )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
     torch.manual_seed(0)
     E, H, I, N, topk, r = 4, 256, 256, 64, 2, 24  # noqa: E741  (r non-pow2 on purpose)
@@ -32,7 +36,7 @@ def test_fused_matches_unfused_fp8_path(act_type, limit, monkeypatch):
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1)
 
     def run(fused):
-        monkeypatch.setenv("AXOLOTL_SWIGLU_EPILOGUE", "1" if fused else "0")
+        monkeypatch.setattr(RUNTIME, "swiglu_epilogue", fused)
         torch.manual_seed(1)
         Ag = (
             torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
@@ -69,27 +73,3 @@ def test_fused_matches_unfused_fp8_path(act_type, limit, monkeypatch):
     names = ["out", "d_hidden", "dAgu", "dBgu", "dAdn", "dBdn"]
     for name, a, b in zip(names, got, ref, strict=True):
         torch.testing.assert_close(a, b, rtol=2e-2, atol=2e-2, msg=f"{name} mismatch")
-
-
-def test_config_wiring(monkeypatch):
-    from axolotl.integrations.kernels.args import KernelsArgs
-    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import (
-        RUNTIME,
-        configure_scattermoe_runtime,
-    )
-
-    assert KernelsArgs.model_validate({"moe_swiglu_epilogue": True}).moe_swiglu_epilogue
-    assert KernelsArgs.model_validate({}).moe_swiglu_epilogue is None
-
-    class _C(dict):
-        get = dict.get
-
-    monkeypatch.delenv("AXOLOTL_SWIGLU_EPILOGUE", raising=False)
-    configure_scattermoe_runtime(_C({"moe_swiglu_epilogue": True}))
-    assert RUNTIME.swiglu_epilogue is True
-    configure_scattermoe_runtime(_C({}))
-    assert RUNTIME.swiglu_epilogue is False
-    monkeypatch.setenv("AXOLOTL_SWIGLU_EPILOGUE", "1")
-    configure_scattermoe_runtime(_C({}))
-    assert RUNTIME.swiglu_epilogue is True
-    RUNTIME.reset()

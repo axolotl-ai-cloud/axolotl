@@ -18,7 +18,11 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.activation_checkpointing import (
+    ActivationCheckpointingConfig,
+)
 from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
+from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
@@ -65,13 +69,9 @@ from axolotl.utils.schemas.model import (
     SpecialTokensConfig,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
-from axolotl.utils.schemas.peft import LoraConfig, MixLoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import (
-    HyperparametersConfig,
-    JaggedLRConfig,
-    SelectiveCheckpointingConfig,
-)
+from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import (
     ValidationMixin,
@@ -199,7 +199,6 @@ class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
-    MixLoraConfig,
     ReLoRAConfig,
     JaggedLRConfig,
     HyperparametersConfig,
@@ -306,6 +305,13 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
     )
+    checkpoint_publish: CheckpointPublishConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Publish LoRA or merged weights as a full checkpoint "
+            "followed by XOR deltas, to a local directory, S3, or a destination plugin."
+        },
+    )
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
@@ -354,7 +360,11 @@ class AxolotlInputConfig(
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
+        json_schema_extra={
+            "description": "Deprecated by TRL. Apply Liger's layer kernels in DPO; "
+            "TRL's fused LM head scores the tokens and keeps Liger's fused linear "
+            "cross entropy off."
+        },
     )
 
     dpo_padding_free: bool | None = None
@@ -482,6 +492,12 @@ class AxolotlInputConfig(
     dataloader_pin_memory: bool | None = None
     dataloader_num_workers: int | None = None
     dataloader_prefetch_factor: int | None = None
+    dataloader_persistent_workers: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Keep DataLoader workers alive between epochs and evaluations instead of restarting them. Needs dataloader_num_workers > 0. Workers keep their own dataset copy, so per-epoch dataset state (e.g. IterableDataset.set_epoch shuffling) does not reach them."
+        },
+    )
     dataloader_drop_last: bool | None = None
 
     accelerator_config: dict[str, Any] | None = None
@@ -640,38 +656,13 @@ class AxolotlInputConfig(
     )
     float32: bool | None = None
 
-    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
-        },
-    )
-    gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
-        },
-    )
-    selective_checkpointing: SelectiveCheckpointingConfig | bool | None = Field(
-        default=None,
+    activation_checkpointing: ActivationCheckpointingConfig = Field(
+        default_factory=lambda: ActivationCheckpointingConfig(enabled=False),
         json_schema_extra={
             "description": (
-                "Selective activation checkpointing: within each gradient-checkpointed "
-                "layer, save the listed ops during forward instead of recomputing them "
-                "in backward. `true` saves attention (SDPA/flash-attention). Requires "
-                "gradient_checkpointing with non-reentrant checkpointing."
-            )
-        },
-    )
-    activation_offloading: Literal["hidden_states"] | bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": (
-                "Whether to offload activations. Options: true/false (TRL offloader; "
-                "gradient_checkpointing decides whether layers recompute), or "
-                "'hidden_states' (checkpoint input offload; non-reentrant by default, "
-                "ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). "
-                "'legacy' is a deprecated alias of true; 'disk' is disabled."
+                "Activation checkpointing (recompute each decoder layer in backward) "
+                "and activation offloading. `true` enables transformers' activation "
+                "checkpointing. See docs/activation_checkpointing.qmd."
             )
         },
     )
@@ -778,7 +769,7 @@ class AxolotlInputConfig(
     sample_packing_mp_start_method: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'"
+            "description": "The multiprocessing start method to use for packing: 'fork', 'spawn' or 'forkserver'. Defaults to 'forkserver' where available (Linux, macOS), else the platform default."
         },
     )
     eval_sample_packing: bool | None = Field(
@@ -1252,7 +1243,7 @@ class AxolotlInputConfig(
     torch_compile_regional: bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing."
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks activation_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without activation checkpointing."
         },
     )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
@@ -1728,6 +1719,16 @@ class AxolotlInputConfig(
             data.pop(flag, None)
 
         return data
+
+    @field_validator("activation_checkpointing", mode="before")
+    @classmethod
+    def expand_activation_checkpointing(cls, value):
+        # also accepts true/false/null; readers rely on the block always being present
+        if value is None or value is False:
+            return {"enabled": False}
+        if value is True:
+            return {}
+        return value
 
     @field_validator("large_head_attention", mode="before")
     @classmethod
@@ -2252,6 +2253,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
             data["dataloader_pin_memory"] = True
             data["dataloader_prefetch_factor"] = 256
+        if data.get("dataloader_persistent_workers") and not data.get(
+            "dataloader_num_workers"
+        ):
+            raise ValueError(
+                "dataloader_persistent_workers requires dataloader_num_workers > 0"
+            )
 
         return data
 

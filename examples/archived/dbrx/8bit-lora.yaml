@@ -50,9 +50,9 @@ learning_rate: 0.0002
 bf16: auto
 tf32: false
 
-gradient_checkpointing: false  # don't use with fsdp_activation_checkpointing
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2
@@ -74,4 +74,3 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: DbrxBlock
   fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_activation_checkpointing: true

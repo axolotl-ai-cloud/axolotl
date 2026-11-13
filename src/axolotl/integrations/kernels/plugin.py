@@ -48,6 +48,24 @@ def _quack_policy(cfg) -> tuple[str, bool] | None:
     return cfg.quack_autotune_key_buckets or "pow2", cfg.quack_autotune is not False
 
 
+def _autotune_profiles(cfg) -> list[dict]:
+    """The config's ``autotune_profiles``, then the built-in SonicMoE B200 ones for every quack
+    kernel the config does not profile (sweep mode only: with ``quack_autotune: false`` the
+    rule picks each config)."""
+    profiles = list(cfg.autotune_profiles or [])
+    if (
+        cfg.use_sonicmoe
+        and cfg.quack_autotune is not False
+        and cfg.quack_autotune_default_profiles is not False
+    ):
+        from axolotl.integrations.kernels.quack_default_profiles import (
+            default_quack_profiles,
+        )
+
+        profiles += default_quack_profiles(profiles)
+    return profiles
+
+
 def _seed_ep_padding(cfg, model) -> None:
     from axolotl.integrations.kernels.libs.sonicmoe.experts import seed_ep_padding_marks
 
@@ -411,12 +429,13 @@ class KernelsPlugin(BasePlugin):
                 )
 
                 load_quack_cache(quack_cache_path(cfg.autotune_cache_path))
-        if cfg.autotune_profiles:
+        profiles = _autotune_profiles(cfg)
+        if profiles:
             from axolotl.integrations.kernels.autotune_profiles import (
                 apply_autotune_profiles,
             )
 
-            apply_autotune_profiles(cfg.autotune_profiles)
+            apply_autotune_profiles(profiles)
         if cfg.autotune_neighborhood:
             from axolotl.integrations.kernels.autotune_neighborhood import (
                 install_neighborhood_search,
@@ -468,7 +487,7 @@ class KernelsPlugin(BasePlugin):
             callbacks.append(
                 AutotuneCacheCallback(
                     cfg.autotune_cache_path,
-                    cfg.autotune_profiles,
+                    _autotune_profiles(cfg) or None,
                     neighborhood=cfg.autotune_neighborhood,
                     sonicmoe=bool(cfg.use_sonicmoe),
                     quack_policy=_quack_policy(cfg),

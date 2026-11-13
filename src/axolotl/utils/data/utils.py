@@ -12,10 +12,10 @@ import numpy as np
 import requests
 from datasets import Dataset, IterableDataset
 
+from axolotl.utils.data.packing import filter_sequences_by_length
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.utils import get_dataset_lengths
-from axolotl.utils.trainer import filter_sequences_by_length
 
 LOG = get_logger(__name__)
 
@@ -29,7 +29,9 @@ class RetryStrategy(Enum):
 
 
 def retry_on_request_exceptions(
-    max_retries=3, delay=1, retry_strategy: RetryStrategy = RetryStrategy.LINEAR
+    max_retries: int = 3,
+    delay: float = 1,
+    retry_strategy: RetryStrategy = RetryStrategy.LINEAR,
 ) -> Callable:
     """Decorator that retries function calls on specific request exceptions.
 

@@ -155,3 +155,36 @@ def test_log_warns_only_below_threshold(caplog):
     assert len(warnings) == 1
     assert "10.0%" in warnings[0].getMessage()
     assert "do X." in warnings[0].getMessage()
+
+
+@pytest.mark.gpu
+def test_training_merge_and_merge_writer_agree_under_tf32():
+    """Per-step publishing and merge-lora must write the weights the merge-aware
+    forward trained against, which ``tf32: true`` must not move."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+    from axolotl.cli.utils.lora_merge import _build_peft_layer_and_get_delta
+
+    torch.manual_seed(0)
+    out_features, in_features, r, alpha = 4864, 896, 16, 32
+    weight = (torch.randn(out_features, in_features) * 0.02).to(torch.bfloat16).cuda()
+    lora_a = (torch.randn(r, in_features) * 0.05).cuda()
+    lora_b = (torch.randn(out_features, r) * 0.01).cuda()
+    matmul = torch.backends.cuda.matmul
+    previous = matmul.fp32_precision
+    try:
+        matmul.fp32_precision = "ieee"
+        reference = (weight.float() + (alpha / r) * (lora_b @ lora_a)).to(
+            torch.bfloat16
+        )
+        matmul.fp32_precision = "tf32"
+        trained = merged_lora_weight(weight, lora_a, lora_b, alpha / r, torch.bfloat16)
+        delta = _build_peft_layer_and_get_delta(
+            lora_a, lora_b, {"r": r, "lora_alpha": alpha}, weight
+        )
+        written = (weight.float() + delta.float()).to(torch.bfloat16)
+        assert matmul.fp32_precision == "tf32"
+    finally:
+        matmul.fp32_precision = previous
+    assert torch.equal(trained.view(torch.int16), reference.view(torch.int16))
+    assert torch.equal(written.view(torch.int16), reference.view(torch.int16))

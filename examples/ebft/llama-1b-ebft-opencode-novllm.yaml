@@ -47,7 +47,7 @@ lora_target_linear: true
 
 bf16: auto
 attn_implementation: flash_attention_2
-gradient_checkpointing: true
+activation_checkpointing: true
 
 special_tokens:
   pad_token: "<|end_of_text|>"

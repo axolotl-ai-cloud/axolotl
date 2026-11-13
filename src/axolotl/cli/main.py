@@ -3,7 +3,7 @@
 import os
 import subprocess  # nosec B404
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import click
 from dotenv import load_dotenv
@@ -70,7 +70,7 @@ def cli():
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
-def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
+def preprocess(config: str, cloud: Optional[str] = None, **kwargs: Any):
     """
     Preprocess datasets before training.
 
@@ -118,7 +118,7 @@ def train(
     launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
     cloud: str | None = None,
     sweep: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ):
     """
     Train or fine-tune a model.
@@ -173,7 +173,7 @@ def train(
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
-def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
+def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs: Any):
     """
     Evaluate a model.
 
@@ -222,7 +222,12 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
 @filter_none_kwargs
 @click.pass_context
 def inference(
-    ctx: click.Context, config: str, launcher: str, gradio: bool, chat: bool, **kwargs
+    ctx: click.Context,
+    config: str,
+    launcher: str,
+    gradio: bool,
+    chat: bool,
+    **kwargs: Any,
 ):
     """
     Run inference with a trained model.
@@ -277,7 +282,7 @@ def inference(
 @filter_none_kwargs
 @click.pass_context
 def merge_sharded_fsdp_weights(
-    ctx: click.Context, config: str, launcher: str, **kwargs
+    ctx: click.Context, config: str, launcher: str, **kwargs: Any
 ):
     """
     Merge sharded FSDP model weights.
@@ -327,7 +332,7 @@ def merge_sharded_fsdp_weights(
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
-def merge_lora(config: str, **kwargs):
+def merge_lora(config: str, **kwargs: Any):
     """
     Merge trained LoRA adapters into a base model.
 

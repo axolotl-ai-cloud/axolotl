@@ -158,7 +158,7 @@ The tables below provide approximate GPU memory requirements. Actual usage depen
 | 70-72B | 40-48 GB | 2x 80 GB | 4-8x 80 GB |
 
 ::: {.callout-important}
-These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use [gradient checkpointing](gradient_checkpointing.qmd) to reduce activation memory at the cost of ~30% slower training.
+These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use [activation checkpointing](activation_checkpointing.qmd) to reduce activation memory at the cost of ~30% slower training.
 :::
 
 ### GRPO (RL Training)

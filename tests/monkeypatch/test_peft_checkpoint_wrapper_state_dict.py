@@ -19,7 +19,10 @@ def test_checkpoint_wrapped_adapter_round_trips_sharded_state(tmp_path, monkeypa
     from torch.distributed.device_mesh import init_device_mesh
     from transformers import LlamaConfig, LlamaForCausalLM
 
-    from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_prepare_model
+    from axolotl.monkeypatch.accelerate.fsdp2 import (
+        fsdp2_apply_ac,
+        fsdp2_prepare_model,
+    )
     from axolotl.monkeypatch.peft.state_dict import (
         patch_peft_checkpoint_wrapper_prefixes,
     )
@@ -69,7 +72,9 @@ def test_checkpoint_wrapped_adapter_round_trips_sharded_state(tmp_path, monkeypa
                 parallelism_config=SimpleNamespace(fsdp_dim_names=("dp_shard",)),
             ),
         )
-        model = fsdp2_prepare_model(accelerator, model)
+        # accelerate's `_prepare_fsdp2` order
+        plugin.set_auto_wrap_policy(model)
+        model = fsdp2_prepare_model(accelerator, fsdp2_apply_ac(accelerator, model))
         assert any("_checkpoint_wrapped_module" in n for n, _ in model.named_modules())
 
         save_plugin = SimpleNamespace(

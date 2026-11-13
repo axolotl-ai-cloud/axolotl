@@ -1,6 +1,5 @@
 """Defensive regression tests for edge cases of the fused-attn patches."""
 
-import inspect
 import logging
 
 import pytest
@@ -103,19 +102,20 @@ class TestFusedAttnKernelUnsupportedWarning:
             "fused_attn_kernel" in r.message for r in patch_manager_caplog.records
         ), "no warning expected when fused_attn_kernel is False"
 
-    def test_warning_is_invoked_by_apply_model_specific_patches(self):
-        """Source-line check that ``_apply_model_specific_patches`` actually
-        calls ``_warn_if_fused_attn_unsupported``. Without this, the standalone
-        helper passes its unit tests but never runs in practice."""
-        import inspect
+    def test_warning_is_invoked_by_apply_model_specific_patches(
+        self, monkeypatch, patch_manager_caplog
+    ):
+        from types import SimpleNamespace
 
         from axolotl.loaders.patch_manager import PatchManager
+        from axolotl.utils.dict import DictDefault
 
-        src = inspect.getsource(PatchManager._apply_model_specific_patches)
-        assert "_warn_if_fused_attn_unsupported" in src, (
-            "_apply_model_specific_patches no longer invokes "
-            "_warn_if_fused_attn_unsupported — the warning will be dead code"
-        )
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        cfg = DictDefault(fused_attn_kernel=True, model_config_type="llama")
+        PatchManager(cfg, SimpleNamespace())._apply_model_specific_patches()
+
+        assert "fused_attn_kernel" in patch_manager_caplog.text
+        assert "llama" in patch_manager_caplog.text
 
 
 class TestPeftModulesToSaveWrapper:
@@ -339,14 +339,43 @@ class TestAttentionMaskPassThrough:
 class TestSlidingWindowKwarg:
     """The fused forward must preserve ``sliding_window`` on the attention-interface call."""
 
-    def test_fused_forward_passes_sliding_window(self):
+    @pytest.mark.gpu
+    def test_fused_forward_passes_sliding_window(self, monkeypatch):
+        from unittest.mock import Mock
+
+        from transformers import Qwen3Config
+        from transformers.models.qwen3 import modeling_qwen3
+
         from axolotl.monkeypatch.models.qwen3 import fused_attn
 
-        src = inspect.getsource(fused_attn._make_fused_forward)
-        assert "sliding_window=self.sliding_window" in src, (
-            "Qwen3 fused_forward must pass sliding_window to attention_interface "
-            "to preserve sliding-attention layer behavior"
+        config = Qwen3Config(
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=8,
+            use_sliding_window=True,
+            sliding_window=2,
+            layer_types=["sliding_attention"],
         )
+        config._attn_implementation = "eager"
+        attention = modeling_qwen3.Qwen3Attention(config, layer_idx=0).to(
+            device="cuda", dtype=torch.bfloat16
+        )
+        interface = Mock(wraps=modeling_qwen3.eager_attention_forward)
+        monkeypatch.setattr(modeling_qwen3, "eager_attention_forward", interface)
+        hidden = torch.randn(1, 3, 32, device="cuda", dtype=torch.bfloat16)
+        cos = torch.ones(1, 3, 8, device="cuda", dtype=torch.bfloat16)
+        sin = torch.zeros_like(cos)
+
+        output, _ = fused_attn._make_fused_forward()(
+            attention, hidden, (cos, sin), attention_mask=None
+        )
+
+        interface.assert_called_once()
+        assert interface.call_args.kwargs["sliding_window"] == 2
+        assert output.shape == hidden.shape
 
 
 class TestGetTextConfigDispatch:

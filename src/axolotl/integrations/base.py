@@ -94,6 +94,7 @@ class AdapterCapabilities:
     name: str
     lora_like: bool = False
     relora: bool = False
+    supports_merge: bool = True
 
 
 class BasePlugin:
@@ -109,6 +110,8 @@ class BasePlugin:
     Note:
         Plugin methods include:
         - register(cfg): Registers the plugin with the given configuration.
+        - get_distributed_env(cfg): Returns environment variables that must be set
+            before the distributed process group is created.
         - load_datasets(cfg): Loads and preprocesses the dataset for training.
         - pre_model_load(cfg): Performs actions before the model is loaded.
         - post_model_build(cfg, model): Performs actions after the model is loaded, but
@@ -140,6 +143,23 @@ class BasePlugin:
 
     def on_config_validation_error(self, cfg: dict):
         """Undo any register()-time side effects after the config is rejected."""
+
+    def get_distributed_env(self, cfg: DictDefault) -> dict[str, str]:
+        """Returns environment variables that must be present before the process group
+        and NCCL communicators are created (e.g. ``NCCL_MAX_CTAS``).
+
+        Called from ``prepare_optim_env`` inside ``load_cfg``, so it runs for every CLI
+        command (train, preprocess, inference, merge-lora, ...), after ``register`` and
+        config validation and before ``pre_model_load`` and any ``torch.distributed``
+        initialization. Values are stringified and applied with
+        ``os.environ.setdefault``, so user-set variables win. This hook must be pure
+        (no CUDA or ``torch.distributed`` calls): it also runs on a GPU-less Ray
+        driver to build the workers' runtime environment.
+
+        Args:
+            cfg: The validated configuration.
+        """
+        return {}
 
     def get_input_args(self) -> str | None:
         """Returns a pydantic model for the plugin's input arguments."""
@@ -220,6 +240,37 @@ class BasePlugin:
             model: The loaded model.
         """
 
+    def pre_train(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        resume_from_checkpoint: str | None = None,
+    ):
+        """Performs actions right before training starts.
+
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer about to run.
+            resume_from_checkpoint: Checkpoint being resumed from, if any.
+        """
+
+    def post_model_save(
+        self,
+        cfg: DictDefault,
+        model: PreTrainedModel | PeftModel,
+        output_dir: str,
+    ):
+        """Performs actions after the final model is saved.
+
+        Only called on the single-process save path, where `model` is fully
+        materialized rather than sharded across ranks.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The model that was just saved.
+            output_dir: The directory the model was saved to.
+        """
+
     def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Returns a custom class for the trainer.
 
@@ -238,7 +289,7 @@ class BasePlugin:
             trainer: The trainer object for training.
         """
 
-    def get_training_args(self, cfg: DictDefault):
+    def get_training_args(self, cfg: DictDefault) -> dict | None:
         """
         Returns custom training arguments to set on TrainingArgs.
 
@@ -246,10 +297,12 @@ class BasePlugin:
             cfg: The global axolotl configuration.
 
         Returns:
-            object: dict containing the training arguments.
+            Training argument names mapped to values, or None.
         """
 
-    def get_collator_cls_and_kwargs(self, cfg: DictDefault, is_eval: bool = False):
+    def get_collator_cls_and_kwargs(
+        self, cfg: DictDefault, is_eval: bool = False
+    ) -> tuple[type, dict] | None:
         """
         Returns a custom class for the collator.
 
@@ -258,7 +311,7 @@ class BasePlugin:
             is_eval: Whether this is an eval split.
 
         Returns:
-            class: The class for the collator.
+            A `(collator_cls, collator_kwargs)` tuple, or None.
         """
 
     def create_optimizer(self, cfg: DictDefault, trainer: Trainer) -> Optimizer | None:
@@ -320,10 +373,24 @@ class BasePlugin:
         """
         return []
 
+    def get_reward_funcs(self, cfg: DictDefault) -> list[Callable] | None:
+        """Returns reward functions to add to GRPO training.
+
+        They are passed to the trainer at construction, after those listed in
+        `trl.reward_funcs`. Async GRPO scores in a spawned process, so they must be
+        picklable: module-level functions or instances of module-level classes.
+
+        Args:
+            cfg: The global axolotl configuration.
+
+        Returns:
+            A list of reward functions.
+        """
+
     def on_rollouts_scored(
         self,
         cfg: DictDefault,
-        trainer,
+        trainer: Trainer,
         prompts: list[str],
         completions: list[str],
         rewards: dict[str, list[float]],
@@ -426,6 +493,8 @@ class PluginManager:
         - get_instance(): Static method to get the singleton instance of `PluginManager`.
         - register(plugin_name: str): Registers a new plugin by its name.
         - pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
+        - get_distributed_env(cfg): Merges all plugins' pre-distributed-init env vars;
+            the same value from several plugins is fine, conflicting values raise.
     """
 
     plugins: OrderedDict[str, BasePlugin] = collections.OrderedDict()
@@ -502,6 +571,26 @@ class PluginManager:
             ):
                 plugin.on_config_validation_error(cfg)
 
+    def get_distributed_env(self, cfg: DictDefault) -> dict[str, str]:
+        """Merges the pre-distributed-init environment variables of all registered plugins.
+
+        Raises:
+            ValueError: If two plugins request different values for the same variable.
+        """
+        merged: dict[str, str] = {}
+        owners: dict[str, str] = {}
+        for plugin_name, plugin in self.plugins.items():
+            for key, value in (plugin.get_distributed_env(cfg) or {}).items():
+                value = str(value)
+                if key in merged and merged[key] != value:
+                    raise ValueError(
+                        f"Plugins '{owners[key]}' and '{plugin_name}' set conflicting "
+                        f"values for {key}: {merged[key]!r} vs {value!r}"
+                    )
+                merged.setdefault(key, value)
+                owners.setdefault(key, plugin_name)
+        return merged
+
     def get_input_args(self) -> list[str]:
         """Returns a list of Pydantic classes for all registered plugins' input arguments.'
 
@@ -515,12 +604,12 @@ class PluginManager:
                 input_args.append(input_args_from_plugin)
         return input_args
 
-    def get_training_args_mixin(self):
+    def get_training_args_mixin(self) -> list[str]:
         """
-        Returns a list of dataclasses for all registered plugins' training args mixins'
+        Returns the training args mixin dataclasses for all registered plugins.
 
         Returns:
-        list[str]: A list of dataclsses
+            Import paths of the plugins' training args mixin dataclasses.
         """
         training_args = []
         for plugin in self.plugins.values():
@@ -654,6 +743,40 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.post_model_load(cfg, model)
 
+    def is_lora_like(self, adapter: str | None) -> bool:
+        """Returns whether an adapter follows LoRA-style loading semantics."""
+        if adapter in ("lora", "qlora"):
+            return True
+        capability = self.get_adapter_capability(adapter) if adapter else None
+        return bool(capability and capability.lora_like)
+
+    def adapter_supports_merge(self, adapter: str | None) -> bool:
+        """Returns whether a plugin adapter can be merged into the base model."""
+        capability = self.get_adapter_capability(adapter) if adapter else None
+        return capability.supports_merge if capability else True
+
+    def pre_train(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        resume_from_checkpoint: str | None = None,
+    ):
+        """Calls the `pre_train` method of each registered plugin."""
+        for plugin in self.plugins.values():
+            plugin.pre_train(
+                cfg, trainer, resume_from_checkpoint=resume_from_checkpoint
+            )
+
+    def post_model_save(
+        self,
+        cfg: DictDefault,
+        model: PreTrainedModel | PeftModel,
+        output_dir: str,
+    ):
+        """Calls the `post_model_save` method of each registered plugin."""
+        for plugin in self.plugins.values():
+            plugin.post_model_save(cfg, model, output_dir)
+
     def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Calls the `get_trainer_cls` method of all registered plugins and returns the
         first non-`None` trainer class.
@@ -670,15 +793,15 @@ class PluginManager:
                 return trainer_cls
         return None
 
-    def get_training_args(self, cfg):
+    def get_training_args(self, cfg: DictDefault) -> dict:
         """
         Calls the get_training_args method of all registered plugins and returns the combined training arguments.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
+        Args:
+            cfg: The configuration for the plugins.
 
         Returns:
-        object: The training arguments
+            Training argument names mapped to values, merged across plugins.
         """
         training_args_kwargs = {}
         for plugin in self.plugins.values():
@@ -688,16 +811,18 @@ class PluginManager:
 
         return training_args_kwargs
 
-    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+    def get_collator_cls_and_kwargs(
+        self, cfg: DictDefault, is_eval: bool = False
+    ) -> tuple[type, dict] | None:
         """
         Calls the get_collator_cls_and_kwargs method of all registered plugins and returns the first non-None collator class.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        is_eval (bool): Whether this is an eval split.
+        Args:
+            cfg: The configuration for the plugins.
+            is_eval: Whether this is an eval split.
 
         Returns:
-        object: The collator class, or None if none was found.
+            The first `(collator_cls, collator_kwargs)` tuple, or None if none was found.
         """
         for plugin in self.plugins.values():
             collator = plugin.get_collator_cls_and_kwargs(cfg, is_eval=is_eval)
@@ -811,10 +936,25 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.post_lora_merge(cfg, adapter_path, output_path)
 
+    def get_reward_funcs(self, cfg: DictDefault) -> list[Callable]:
+        """Calls the `get_reward_funcs` method of all registered plugins and returns
+        the combined reward functions.
+
+        Args:
+            cfg: The configuration for the plugins.
+
+        Returns:
+            The reward functions, in plugin registration order.
+        """
+        reward_funcs: list[Callable] = []
+        for plugin in self.plugins.values():
+            reward_funcs.extend(plugin.get_reward_funcs(cfg) or [])
+        return reward_funcs
+
     def on_rollouts_scored(
         self,
         cfg: DictDefault,
-        trainer,
+        trainer: Trainer,
         prompts: list[str],
         completions: list[str],
         rewards: dict[str, list[float]],

@@ -1,0 +1,87 @@
+name: GPU kernel tests
+
+on:
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+    inputs:
+      nightly:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  MODAL_IMAGE_BUILDER_VERSION: "2026.10"
+
+jobs:
+  docker-e2e-kernel-tests:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.3
+            python_version: "3.12"
+            pytorch: 2.13.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.3
+            python_version: "3.14"
+            pytorch: 2.14.1
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.6.3 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ inputs.nightly && 'true' || '' }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=L40S" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
+      - name: Restore testmon
+        uses: ./.github/actions/testmon-restore
+        with:
+          suite: gpu-kernels-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-L40S-${{ inputs.nightly && 'nightly' || 'pinned' }}
+      - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_cuda_kernels
+      - name: Save testmon
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/testmon-save
+        with:
+          suite: gpu-kernels-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-L40S-${{ inputs.nightly && 'nightly' || 'pinned' }}

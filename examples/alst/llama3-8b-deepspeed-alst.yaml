@@ -34,8 +34,10 @@ learning_rate: 2e-5
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-activation_offloading: legacy
+activation_checkpointing:
+  enabled: true
+  offload:
+    all: cpu
 
 resume_from_checkpoint:
 logging_steps: 1

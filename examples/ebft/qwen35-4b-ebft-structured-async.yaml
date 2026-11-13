@@ -31,7 +31,6 @@ trl:
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   scale_rewards: true
-  loss_type: grpo
   epsilon: 0.2
   generation_kwargs:
     stop_token_ids: [248044, 248046]  # <|endoftext|>, <|im_end|>
@@ -72,7 +71,7 @@ lora_target_modules: ".*\\.layers\\.(3|7|11|15|19|23|27|31)\\.self_attn\\.(q|k|v
 
 bf16: auto
 attn_implementation: flash_attention_2
-gradient_checkpointing: true
+activation_checkpointing: true
 
 special_tokens:
   pad_token: "<|endoftext|>"

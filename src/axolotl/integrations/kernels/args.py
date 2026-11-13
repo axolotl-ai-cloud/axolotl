@@ -83,6 +83,10 @@ class KernelsArgs(BaseModel):
     # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
     # match), so a new shape costs at most a compile. Default true (sweep).
     quack_autotune: bool | None = None
+    # SonicMoE on B200: sweep only the configs measured best for each grouped GEMM (1-5 instead
+    # of 74-76; quack_default_profiles.py) for every quack kernel autotune_profiles leaves
+    # unprofiled. Default true; false = full sweeps. No effect with quack_autotune: false.
+    quack_autotune_default_profiles: bool | None = None
     # grouped-expert backward base-dX precision: True = fp8-read (fast, ~2% grad err; sm120-only
     # default) | False = bf16-dequant (more accurate). None = arch default.
     moe_fp8_dx: bool | None = None
@@ -203,11 +207,18 @@ class KernelsArgs(BaseModel):
                 "quack_autotune_key_buckets must be 'pow2', 'shape' or 'none'"
             )
         tune = data.get("quack_autotune")
-        if tune is not None and not isinstance(tune, bool):
-            raise ValueError("quack_autotune must be true or false")
-        if (buckets is not None or tune is not None) and not data.get("use_sonicmoe"):
+        defaults = data.get("quack_autotune_default_profiles")
+        for name, value in (
+            ("quack_autotune", tune),
+            ("quack_autotune_default_profiles", defaults),
+        ):
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"{name} must be true or false")
+        set_any = buckets is not None or tune is not None or defaults is not None
+        if set_any and not data.get("use_sonicmoe"):
             raise ValueError(
-                "quack_autotune and quack_autotune_key_buckets only apply with use_sonicmoe"
+                "quack_autotune, quack_autotune_key_buckets and "
+                "quack_autotune_default_profiles only apply with use_sonicmoe"
             )
         return data
 
@@ -304,6 +315,29 @@ class KernelsArgs(BaseModel):
                 raise bad
             if isinstance(start, int) and start < 0:
                 raise bad
+        return data
+
+    # Mistral-Large-4 fused, quantization-dispatching LoRA for the MLA attention projections
+    # (q_proj/kv_a_proj_with_mqa/kv_b_proj/o_proj): bf16 / nf4 / fp8-dequant via the shared LoRA_O
+    # kernel, native blockwise-fp8 on the large projections, low-bit (nvfp4/mx) by transient
+    # dequant. None = on for a LoRA run on a block-FP8 / bf16 checkpoint, off on the modelopt
+    # NVFP4 checkpoint and under an activation_checkpointing.selective that saves matmul outputs.
+    mistral_large4_attn_lora_kernel: bool | None = None
+    # Use the native blockwise-fp8 GEMM (vs dequant) on q_proj/kv_b_proj/o_proj when the base is
+    # fp8. Default on (DeepGEMM sm90/sm100, Triton sm120).
+    mistral_large4_attn_native_fp8: bool | None = None
+    # Optionally quantize the frozen MLA attention bases (post-PEFT-wrap) to a low-bit format so the
+    # fused attention-LoRA kernel runs the 4-/8-bit path: none (default) | nvfp4 | mxfp4 | mxfp8.
+    mistral_large4_attn_quantization: (
+        Literal["none", "nvfp4", "mxfp4", "mxfp8"] | None
+    ) = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mistral_large4_attn_quantization(cls, data):
+        quant = data.get("mistral_large4_attn_quantization")
+        if isinstance(quant, str):
+            data["mistral_large4_attn_quantization"] = quant.lower()
         return data
 
     @model_validator(mode="before")

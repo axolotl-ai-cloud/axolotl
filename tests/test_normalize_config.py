@@ -40,32 +40,34 @@ class NormalizeConfigTestCase(unittest.TestCase):
         )
 
     @patch("axolotl.utils.config.load_model_config")
-    def test_gradient_checkpointing_defaults_to_non_reentrant(self, load_config):
+    def test_activation_checkpointing_defaults_to_non_reentrant(self, load_config):
         load_config.return_value = SimpleNamespace(model_type="llama")
         cfg = self._get_base_cfg()
-        cfg.gradient_checkpointing = True
+        cfg.activation_checkpointing = DictDefault(enabled=True)
         with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
             normalize_config(cfg)
 
-        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": False}
+        assert cfg.activation_checkpointing.reentrant is False
 
     @patch("axolotl.utils.config.load_model_config")
-    def test_gradient_checkpointing_zero3_keeps_reentrant(self, load_config):
+    def test_activation_checkpointing_zero3_keeps_reentrant(self, load_config):
         load_config.return_value = SimpleNamespace(model_type="llama")
         for deepspeed, stage in (
             ({"zero_optimization": {"stage": 3}}, ""),
             (None, "3"),
         ):
             cfg = self._get_base_cfg()
-            cfg.gradient_checkpointing = True
+            cfg.activation_checkpointing = DictDefault(enabled=True)
             cfg.deepspeed = deepspeed
             with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": stage}):
                 normalize_config(cfg)
 
-            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+            assert cfg.activation_checkpointing.reentrant is True
 
     @patch("axolotl.utils.config.load_model_config")
-    def test_gradient_checkpointing_zero3_detected_from_config_file(self, load_config):
+    def test_activation_checkpointing_zero3_detected_from_config_file(
+        self, load_config
+    ):
         load_config.return_value = SimpleNamespace(model_type="llama")
         for deepspeed, expected in (
             ("deepspeed_configs/zero3_bf16.json", True),
@@ -73,39 +75,57 @@ class NormalizeConfigTestCase(unittest.TestCase):
             ("/nonexistent/my_zero3.json", True),
         ):
             cfg = self._get_base_cfg()
-            cfg.gradient_checkpointing = True
+            cfg.activation_checkpointing = DictDefault(enabled=True)
             cfg.deepspeed = deepspeed
             with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
                 normalize_config(cfg)
 
-            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": expected}
+            assert cfg.activation_checkpointing.reentrant is expected
 
     @patch("axolotl.utils.config.load_model_config")
-    def test_gradient_checkpointing_kwargs_without_use_reentrant_get_default(
-        self, load_config
-    ):
-        load_config.return_value = SimpleNamespace(model_type="llama")
-        for kwargs in ({}, {"determinism_check": "none"}):
-            cfg = self._get_base_cfg()
-            cfg.gradient_checkpointing = True
-            cfg.gradient_checkpointing_kwargs = dict(kwargs)
-            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
-                normalize_config(cfg)
-
-            assert cfg.gradient_checkpointing_kwargs == {
-                **kwargs,
-                "use_reentrant": False,
-            }
-
-    @patch("axolotl.utils.config.load_model_config")
-    def test_gradient_checkpointing_kwargs_kept_when_set(self, load_config):
+    def test_checkpoint_kwargs_kept_alongside_reentrant_default(self, load_config):
         load_config.return_value = SimpleNamespace(model_type="llama")
         cfg = self._get_base_cfg()
-        cfg.gradient_checkpointing = True
-        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+        cfg.activation_checkpointing = DictDefault(
+            enabled=True, kwargs={"determinism_check": "none"}
+        )
+        with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+            normalize_config(cfg)
+
+        assert cfg.activation_checkpointing.reentrant is False
+        assert cfg.activation_checkpointing.kwargs == {"determinism_check": "none"}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_explicit_reentrant_kept(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        cfg = self._get_base_cfg()
+        cfg.activation_checkpointing = DictDefault(enabled=True, reentrant=True)
         normalize_config(cfg)
 
-        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+        assert cfg.activation_checkpointing.reentrant is True
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_reentrant_left_unset_for_fsdp_and_disabled(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for block in (
+            DictDefault(enabled=False),
+            DictDefault(enabled=True, implementation="fsdp"),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.activation_checkpointing = block
+            normalize_config(cfg)
+
+            assert cfg.activation_checkpointing.reentrant is None
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_model_types_force_non_reentrant(self, load_config):
+        for model_type in ("mistral_large4", "gemma4", "gemma4_unified"):
+            load_config.return_value = SimpleNamespace(model_type=model_type)
+            cfg = self._get_base_cfg()
+            cfg.activation_checkpointing = DictDefault(enabled=True, reentrant=True)
+            normalize_config(cfg)
+
+            assert cfg.activation_checkpointing.reentrant is False, model_type
 
     def test_base_model_config_set_when_empty(self):
         cfg = self._get_base_cfg()
@@ -468,7 +488,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
                     "fsdp_version": 2,
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "mixed_precision_policy": "fp16",
-                    "activation_checkpointing": True,
                     "fsdp_reshard_after_forward": False,
                 }
             }
@@ -480,7 +499,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
         self.assertEqual(cfg.fsdp_config.state_dict_type, "FULL_STATE_DICT")
         self.assertEqual(cfg.fsdp_config.reshard_after_forward, False)
         self.assertEqual(cfg.fsdp_config.mixed_precision_policy, "fp16")
-        self.assertEqual(cfg.fsdp_config.activation_checkpointing, True)
 
         # Check original fsdp_ keys are removed
         self.assertNotIn("fsdp_state_dict_type", cfg.fsdp_config)

@@ -9,6 +9,8 @@ from axolotl.monkeypatch.attention import (
 )
 from axolotl.monkeypatch.selective_checkpointing import apply_selective_checkpointing
 
+from tests.cuda_gates import AtSetup
+
 LAYERS = 2
 SEQ = 128
 
@@ -27,7 +29,7 @@ pytestmark = [
     # FA4 also runs on SM90, but CI only has it on B200, where it covers the SM100 backward.
     pytest.mark.gpu_blackwell,
     pytest.mark.skipif(
-        not _fa4_ready(),
+        not torch.cuda.is_available() or AtSetup(lambda: not _fa4_ready()),
         reason="requires a GPU with Flash Attention 4 (flash_attn.cute)",
     ),
 ]
@@ -81,7 +83,7 @@ def _step(arch, sac, packed, monkeypatch):
     fa4.configure_fa4()
     calls = {"fwd": 0}
     kind = fa4_ops.VARLEN if packed else fa4_ops.DENSE
-    func = fa4_ops._ORIGINALS[kind]
+    func = fa4_ops._ORIGINALS[kind, "flash_attn.cute"]
     forward = func.forward
 
     def counting(ctx, *args, **kwargs):

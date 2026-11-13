@@ -9,7 +9,10 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import (
     _scatter2scatter_configs,
 )
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA"),
+]
 
 
 def test_rule_is_pure_and_table_driven(monkeypatch):

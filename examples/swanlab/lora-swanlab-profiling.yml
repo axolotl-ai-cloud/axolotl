@@ -58,7 +58,7 @@ bf16: auto
 tf32: false
 
 # Performance
-gradient_checkpointing: true
+activation_checkpointing: true
 attn_implementation: flash_attention_2
 
 # Checkpointing and Logging
@@ -131,12 +131,12 @@ swanlab_log_completions: false  # Only works with DPO/KTO/ORPO/GRPO
 #
 # 2. Run with gradient checkpointing:
 #    swanlab_experiment_name: llama-3.2-1b-grad-checkpoint
-#    gradient_checkpointing: true
+#    activation_checkpointing: true
 #
 # 3. Run with both:
 #    swanlab_experiment_name: llama-3.2-1b-optimized
 #    flash_attention: true
-#    gradient_checkpointing: true
+#    activation_checkpointing: true
 #
 # Then compare profiling metrics in SwanLab dashboard to see performance impact
 

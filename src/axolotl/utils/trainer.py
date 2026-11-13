@@ -7,29 +7,43 @@ import random
 from contextlib import contextmanager
 from functools import partial
 from tempfile import NamedTemporaryFile
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import torch
 import torch.cuda
-from datasets import IterableDataset, disable_caching, enable_caching
+from datasets import Dataset, IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers.utils import (
-    is_torch_bf16_gpu_available,  # noqa: F401  (kept for any external callers)
-)
+from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.utils.config import bf16_supported
+from axolotl.utils.activation_checkpointing import fsdp_checkpointing_enabled
+from axolotl.utils.data.packing import (  # noqa: F401  (re-exported)
+    add_position_ids,
+    filter_sequences_by_length,
+    process_pretraining_datasets_for_packing,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
     init_distributed_state,
-    is_xla,
     reduce_and_broadcast,
 )
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+
+if TYPE_CHECKING:
+    from peft import PeftConfig
+    from transformers import (
+        PreTrainedModel,
+        PreTrainedTokenizer,
+        ProcessorMixin,
+        Trainer,
+    )
+
+    from axolotl.core.builders.base import TrainerBuilderBase
+    from axolotl.utils.data.evaluation import EvalDataset
 
 LOG = get_logger(__name__)
 
@@ -94,45 +108,6 @@ def disable_datasets_caching():
         yield
     finally:
         enable_caching()
-
-
-def add_position_ids(sample):
-    """
-    Handle both single-example and batched data.
-    - single example: sample['input_ids'] is a list[int]
-    - batched data: sample['input_ids'] is a list[list[int]]
-    """
-    # Return sample unchanged if "input_ids" is not present, or is empty
-    if "input_ids" not in sample or not sample["input_ids"]:
-        return sample
-
-    input_ids = sample["input_ids"]
-
-    # If first element is an int, it’s a single example
-    # If first element is a list, it’s a batch
-    if isinstance(input_ids[0], int):
-        # ---- SINGLE EXAMPLE ----
-        seq_len = len(input_ids)
-        # Position IDs for a single example
-        # As a list
-        sample["position_ids"] = list(range(seq_len))
-        sample["length"] = seq_len
-
-    else:
-        # ---- BATCHED EXAMPLES ----
-        # input_ids is a list of lists
-        position_ids_batch = []
-        lengths_batch = []
-        for seq in input_ids:
-            seq_len = len(seq)
-            position_ids_batch.append(list(range(seq_len)))
-            lengths_batch.append(seq_len)
-
-        # Now store them back
-        sample["position_ids"] = position_ids_batch
-        sample["length"] = lengths_batch
-
-    return sample
 
 
 def add_pose_position_ids(
@@ -203,50 +178,6 @@ def add_pose_position_ids(
 def add_length(sample):
     sample["length"] = len(sample["input_ids"])
     return sample
-
-
-def filter_sequences_by_length(
-    sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=False
-):
-    """
-    Filter sequences outside valid length range [min_sequence_len, sequence_len].
-
-    Drops samples that are either too short (< min_sequence_len) or too long (> sequence_len).
-
-    Works for both single-example (list[int]) or batched (list[list[int]]).
-
-    If raise_on_drop is set, the code raises a ValueError if a sample is
-    encountered that is too long and would have been dropped.
-    """
-    min_sequence_len = min_sequence_len or 2
-
-    input_ids = sample["input_ids"]
-
-    # Edge case: if input_ids is empty
-    if not input_ids:
-        # Decide if you want to drop or keep empty. Let's drop.
-        return False
-
-    # Check if single example or batched by looking at the first element
-    if isinstance(input_ids[0], int):
-        # Single example (input_ids is a list of int)
-        length = len(input_ids)
-        if raise_on_drop and length > sequence_len:
-            raise ValueError(
-                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
-            )
-        return min_sequence_len <= length <= sequence_len
-
-    # Batched (input_ids is a list of lists)
-    results = []
-    for seq in input_ids:
-        length = len(seq)
-        if raise_on_drop and length > sequence_len:
-            raise ValueError(
-                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
-            )
-        results.append(min_sequence_len <= length <= sequence_len)
-    return results
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
@@ -395,28 +326,6 @@ def deepspeed_context_parallel(cfg) -> bool:
     return bool(cfg.deepspeed) and (cfg.context_parallel_size or 1) > 1
 
 
-def process_pretraining_datasets_for_packing(
-    train_dataset, sequence_len, skip_position_ids=True, drop_attention_mask=False
-):
-    drop_outside_range = partial(filter_sequences_by_length, sequence_len=sequence_len)
-
-    train_dataset = train_dataset.filter(
-        drop_outside_range,
-        desc="Dropping Long Sequences",
-        load_from_cache_file=False,
-    )
-    if not skip_position_ids:
-        train_dataset = train_dataset.map(
-            add_position_ids,
-            batched=True,
-            desc="Add position_id column (Pretraining Sample Packing)",
-        )
-    if drop_attention_mask:
-        train_dataset = train_dataset.remove_columns("attention_mask")
-
-    return train_dataset
-
-
 def calculate_total_num_steps(cfg, train_dataset, update=True):
     from axolotl.core.trainers.diffusion_lm.sampling import (
         native_packing_lengths,
@@ -524,7 +433,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
                 num_processes=cfg.dataset_num_proc,
-                mp_start_method=cfg.sample_packing_mp_start_method or "fork",
+                mp_start_method=cfg.sample_packing_mp_start_method,
             )
 
             data_loader = DataLoader(
@@ -649,7 +558,7 @@ def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
 
     os.environ["FSDP_VERSION"] = "2"
-    if cfg.fsdp_config.activation_checkpointing:
+    if fsdp_checkpointing_enabled(cfg):
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
@@ -729,20 +638,49 @@ def setup_deepspeed_context_parallel_envs(cfg):
     os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
+def apply_plugin_distributed_env(cfg) -> dict[str, str]:
+    """Merges every plugin's ``get_distributed_env`` and applies it with
+    ``os.environ.setdefault``, warning if a process group already exists.
+    Returns the merged dict."""
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
+
+    if not (cfg.get("plugins") or get_builtin_plugins()):
+        return {}
+    env = PluginManager.get_instance().get_distributed_env(cfg)
+    # already-present keys were either user-set or forwarded to Ray workers up front
+    newly_set = sorted(key for key in env if key not in os.environ)
+    for key, value in env.items():
+        os.environ.setdefault(key, value)
+    if (
+        newly_set
+        and torch.distributed.is_available()
+        and torch.distributed.is_initialized()
+    ):
+        LOG.warning(
+            "Plugin distributed environment variables %s were set after the process "
+            "group was initialized and may not take effect for it. Set them before "
+            "torch.distributed.init_process_group, or let Axolotl create the process "
+            "group.",
+            newly_set,
+        )
+    return env
+
+
 def prepare_optim_env(cfg):
+    apply_plugin_distributed_env(cfg)
+
     if cfg.ddp_timeout:
         os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
 
-    if not is_xla() and not check_cuda_p2p_ib_support():
+    if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
-    # XLA handles its own distributed setup; skip FSDP/DeepSpeed env vars.
-    if not is_xla() and (cfg.fsdp or cfg.fsdp_config):
+    if cfg.fsdp or cfg.fsdp_config:
         # fsdp_config is source of truth; mutating cfg.fsdp to bool breaks Ray worker schema validation
         setup_fsdp_envs(cfg)
-    elif not is_xla() and cfg.deepspeed:
+    elif cfg.deepspeed:
         stage = None
         deepspeed_config = None
         # check if the cfg.deepspeed is a file
@@ -761,25 +699,25 @@ def prepare_optim_env(cfg):
 
     if cfg.fp8:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
-    elif (cfg.bf16 == "auto" and bf16_supported()) or cfg.bf16 is True:
+    elif (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
-    elif cfg.fp16 and not is_xla():
+    elif cfg.fp16:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
     else:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "no"
 
 
 def setup_trainer(
-    cfg,
-    train_dataset,
-    eval_dataset,
-    model,
-    tokenizer,
-    processor,
-    total_num_steps,
-    model_ref=None,
-    peft_config=None,
-):
+    cfg: DictDefault,
+    train_dataset: Dataset,
+    eval_dataset: "EvalDataset",
+    model: "PreTrainedModel",
+    tokenizer: "PreTrainedTokenizer",
+    processor: "ProcessorMixin | None",
+    total_num_steps: int | None,
+    model_ref: "PreTrainedModel | None" = None,
+    peft_config: "PeftConfig | None" = None,
+) -> "Trainer":
     """
     Helper method for instantiating and building a (causal or RLHF) trainer.
 
@@ -795,11 +733,12 @@ def setup_trainer(
         peft_config: Optional PEFT (Parameter-Efficient Fine-Tuning) configuration. Default is None.
 
     Returns:
-        A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
-            on the provided parameters.
+        A trainer built by `HFRLTrainerBuilder` or `HFCausalTrainerBuilder` from the
+            provided parameters.
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
+    trainer_builder: TrainerBuilderBase
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
         trainer_builder.model_ref = model_ref

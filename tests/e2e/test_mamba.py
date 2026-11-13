@@ -13,6 +13,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
+from tests.cuda_gates import AtSetup
 
 
 def _packed_cfg(base_model, temp_dir, **overrides):
@@ -31,7 +32,7 @@ def _packed_cfg(base_model, temp_dir, **overrides):
                     "type": "alpaca",
                 },
             ],
-            "gradient_checkpointing": False,
+            "activation_checkpointing": False,
             "num_epochs": 2,
             "micro_batch_size": 2,
             "gradient_accumulation_steps": 1,
@@ -61,7 +62,7 @@ def _hub_mamba_kernels_available() -> bool:
     from kernels import has_kernel
 
     try:
-        return has_kernel("kernels-community/mamba-ssm", version=2)
+        return has_kernel("kernels-community/mamba-ssm", version=4)
     except httpx.HTTPError:
         return False
 
@@ -77,7 +78,7 @@ class TestMamba(unittest.TestCase):
 
 
 @pytest.mark.skipif(
-    not _hub_mamba_kernels_available(),
+    AtSetup(lambda: not _hub_mamba_kernels_available()),
     reason="no kernels-community/mamba-ssm build for this torch/CUDA",
 )
 class TestMamba2(unittest.TestCase):

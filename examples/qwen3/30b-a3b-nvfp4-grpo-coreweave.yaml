@@ -1,0 +1,81 @@
+# Async GRPO with merge-aware NVFP4 LoRA, sampling from a CoreWeave Dedicated
+# Inference deployment of the same NVFP4 checkpoint. Every optimizer step the
+# adapter is merged into the NVFP4 base (the grid training ran against), published
+# as an XOR/zstd delta and hot-loaded; rollouts then sample the merged policy.
+# Needs CW_API_TOKEN and S3 credentials for the deployment's hot-load bucket.
+base_model: nvidia/Qwen3-30B-A3B-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.coreweave.CoreWeavePlugin
+use_sonicmoe: true
+nvfp4_merge_aware: true
+
+coreweave:
+  deployment_id: your-deployment-id
+  gateway_url: https://your-gateway-endpoint
+  model: your-deployment-model-name
+  bucket: your-checkpoint-bucket   # the deployment's hot-load bucket
+  path_prefix: training/run-001    # the deployment's hot-load prefix
+  s3_profile: cw
+  rollouts: true
+
+checkpoint_publish:
+  workdir: /scratch/publish        # node-local: per-rank base copy and baseline
+
+rl: grpo
+chat_template: tokenizer_default
+trl:
+  use_vllm: true                   # the deployment's vLLM; no local server is used
+  async_prefetch: true
+  loss_type: cispo
+  token_budget: 8192
+  weight_sync_steps: 1             # publish + hot-load every optimizer step
+  max_staleness: 2
+  num_generations: 8
+  max_completion_length: 1024
+  temperature: 1.0
+  reward_funcs:
+    - rewards.accuracy_reward
+  reward_weights:
+    - 1.0
+
+datasets:
+  - path: openai/gsm8k
+    name: main
+    type: rewards.prompt_transform
+    split: train
+dataset_prepared_path: last_run_prepared
+val_set_size: 0
+output_dir: ./outputs/qwen3-30b-a3b-nvfp4-grpo-coreweave
+
+sequence_len: 2048
+attn_implementation: flash_attention_2
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+max_steps: 200
+optimizer: adamw_torch_fused
+lr_scheduler: constant
+learning_rate: 0.00001
+
+bf16: auto
+tf32: true
+activation_checkpointing: true
+
+logging_steps: 1
+save_steps: 50
+save_only_model: true

@@ -8,7 +8,7 @@ import torch
 from peft import LoraConfig, get_peft_model
 from torch import nn
 
-from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
+from axolotl.core.trainers.mixins.lora_merge_check import LoraMergeCheckMixin
 
 
 class _Toy(nn.Module):

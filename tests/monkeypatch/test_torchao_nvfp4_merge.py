@@ -8,6 +8,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from tests.cuda_gates import cuda_capability_below
+
 pytest.importorskip("torchao")
 peft = pytest.importorskip("peft")
 
@@ -200,7 +202,7 @@ def test_native_lora_runtime_adapter_names_preserves_peft_forward():
 
 
 @pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 10,
+    not torch.cuda.is_available() or cuda_capability_below(10),
     reason="CUDA sm100+ required",
 )
 @pytest.mark.parametrize("supplied_scale", [False, True])
@@ -324,7 +326,7 @@ class _DynamicNativePEFTChain(nn.Module):
 
 
 @pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 10,
+    not torch.cuda.is_available() or cuda_capability_below(10),
     reason="CUDA sm100+ required",
 )
 @pytest.mark.parametrize("merge_aware", [False, True])

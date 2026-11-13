@@ -22,6 +22,7 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.forkserver import preload_forkserver_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.tee import prepare_debug_log
@@ -225,7 +226,7 @@ def plugin_set_cfg(cfg: DictDefault):
 
 @send_errors
 def load_cfg(
-    config: str | Path | DictDefault = Path("examples/"), **kwargs
+    config: str | Path | DictDefault = Path("examples/"), **kwargs: Any
 ) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs
@@ -238,6 +239,9 @@ def load_cfg(
     Returns:
         `DictDefault` mapping configuration keys to values.
     """
+    # before dataset packing or a DataLoader can start the forkserver
+    preload_forkserver_modules()
+
     if isinstance(config, (str, Path)):
         config = check_remote_config(config)
         if Path(config).is_dir():
@@ -264,12 +268,11 @@ def load_cfg(
     cfg_keys = cfg.keys()
 
     # Separate nested (dot-notation) kwargs from flat kwargs
-    nested_kwargs: dict[str, dict[str, Any]] = {}
+    nested_kwargs: dict[tuple[str, ...], Any] = {}
     flat_kwargs: dict[str, Any] = {}
     for key, value in kwargs.items():
         if "__" in key:
-            parent, child = key.split("__", 1)
-            nested_kwargs.setdefault(parent, {})[child] = value
+            nested_kwargs[tuple(key.split("__"))] = value
         else:
             flat_kwargs[key] = value
 
@@ -280,19 +283,21 @@ def load_cfg(
             cfg[key] = _coerce_value(value, cfg.get(key))
 
     # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)
-    for parent, children in nested_kwargs.items():
-        if parent not in cfg_keys and cfg.strict:
+    for path, value in nested_kwargs.items():
+        if path[0] not in cfg_keys and cfg.strict:
             continue
-        if cfg[parent] is None:
-            cfg[parent] = {}
-        if not isinstance(cfg[parent], dict):
-            LOG.warning(
-                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
-            )
-            cfg[parent] = {}
-        for child_key, child_value in children.items():
-            existing_child = cfg[parent].get(child_key)
-            cfg[parent][child_key] = _coerce_value(child_value, existing_child)
+        node = cfg
+        for depth, part in enumerate(path[:-1]):
+            if node.get(part) is None:
+                node[part] = {}
+            if not isinstance(node[part], dict):
+                LOG.warning(
+                    "Overwriting non-dict value for '%s' with nested CLI overrides",
+                    ".".join(path[: depth + 1]),
+                )
+                node[part] = {}
+            node = node[part]
+        node[path[-1]] = _coerce_value(value, node.get(path[-1]))
 
     prepare_plugins(cfg)
 

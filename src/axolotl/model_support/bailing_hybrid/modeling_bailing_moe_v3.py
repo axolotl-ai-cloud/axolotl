@@ -41,6 +41,8 @@ from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs, can_return_tuple
 from transformers.utils.generic import is_flash_attention_requested
 from transformers.utils.output_capturing import capture_outputs
+from tree_recurrence import mark_tree_forward, tree_conv, tree_plan, tree_scan
+from tree_recurrence.components.kda import kda_scan, short_convolution
 
 from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
     BailingMoeV3Config,
@@ -290,6 +292,7 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
             gate = self.g_b_proj(self.g_a_proj(hidden_states))
         return rearrange(gate, "... (h d) -> ... h d", d=self.head_dim)
 
+    @mark_tree_forward
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -307,9 +310,12 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
             recurrent_state = cache_layer.recurrent_states[0]
             conv_states = tuple(cache_layer.conv_states[idx] for idx in range(3))
 
+        tree = tree_plan(kwargs) if cache_layer is None else None
         cu_seqlens, indices = kwargs.get("cu_seqlens"), None
         flattened = False
-        if attention_mask is not None:
+        if tree is not None:
+            pass
+        elif attention_mask is not None:
             # multipack encodes one id per packed document, so unpadding also splits documents
             indices, cu_seqlens, _ = get_unpad_data(attention_mask[:, -q_len:])
             hidden_states = index_first_axis(
@@ -327,33 +333,54 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
             (self.k_proj, self.k_conv1d),
             (self.v_proj, self.v_conv1d),
         )
-        projected = [
-            conv(
-                x=proj(hidden_states),
-                cache=conv_states[idx],
-                output_final_state=cache_layer is not None,
-                cu_seqlens=cu_seqlens,
-            )
-            for idx, (proj, conv) in enumerate(projections)
-        ]
+        if tree is not None:
+            projected = [
+                (
+                    tree_conv(
+                        short_convolution(conv),
+                        proj(hidden_states),
+                        tree,
+                        conv.kernel_size[0],
+                    ),
+                    None,
+                )
+                for proj, conv in projections
+            ]
+        else:
+            projected = [
+                conv(
+                    x=proj(hidden_states),
+                    cache=conv_states[idx],
+                    output_final_state=cache_layer is not None,
+                    cu_seqlens=cu_seqlens,
+                )
+                for idx, (proj, conv) in enumerate(projections)
+            ]
         (q, conv_q), (k, conv_k), (v, conv_v) = projected
         q, k, v = (
             rearrange(x, "... (h d) -> ... h d", d=self.head_dim) for x in (q, k, v)
         )
         beta = self.b_proj(hidden_states).float().sigmoid()
 
-        kernel = chunk_kda if self.training or q_len > 64 else fused_recurrent_kda
-        out, recurrent_state = kernel(
-            q=q,
-            k=k,
-            v=v,
-            g=self._forget_gate(hidden_states),
-            beta=beta,
-            initial_state=recurrent_state,
-            output_final_state=cache_layer is not None,
-            use_qk_l2norm_in_kernel=True,
-            cu_seqlens=cu_seqlens,
-        )
+        if tree is not None:
+            out = tree_scan(
+                kda_scan(chunk_kda),
+                [q, k, v, self._forget_gate(hidden_states), beta],
+                tree,
+            )
+        else:
+            kernel = chunk_kda if self.training or q_len > 64 else fused_recurrent_kda
+            out, recurrent_state = kernel(
+                q=q,
+                k=k,
+                v=v,
+                g=self._forget_gate(hidden_states),
+                beta=beta,
+                initial_state=recurrent_state,
+                output_final_state=cache_layer is not None,
+                use_qk_l2norm_in_kernel=True,
+                cu_seqlens=cu_seqlens,
+            )
         if cache_layer is not None:
             for idx, conv_state in enumerate((conv_q, conv_k, conv_v)):
                 cache_layer.update_conv_state(conv_state, state_idx=idx)

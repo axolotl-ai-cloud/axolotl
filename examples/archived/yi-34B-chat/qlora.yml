@@ -48,7 +48,7 @@ pad_to_sequence_len: false
 # Batching
 gradient_accumulation_steps: 4
 micro_batch_size: 1
-gradient_checkpointing: true
+activation_checkpointing: true
 
 # wandb
 wandb_project:

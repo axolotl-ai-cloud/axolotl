@@ -4,6 +4,9 @@
 """The TRL adapter against TRL's own packing: kwargs from collated batches in either
 format, chain rows and batchers, and ``layer_types`` hidden from TRL's check."""
 
+import dataclasses
+import math
+
 import numpy as np
 import pytest
 import torch
@@ -21,7 +24,21 @@ from tree_recurrence.integrations.trl import (  # noqa: E402
     ChainRow,
     ChainTokenBudgetBatcher,
 )
+from trl.experimental.async_grpo import packing  # noqa: E402
+from trl.experimental.async_grpo.async_rollout_worker import RolloutSample  # noqa: E402
 from trl.experimental.async_grpo.packing import TreeRow  # noqa: E402
+
+
+def unsampled(n_tokens):
+    """The per-token sampler record of a sample drawn without top-k/top-p truncation or
+    sampler log-probs, for the fields this TRL's ``RolloutSample`` has (TRL 1.17)."""
+    fields = {
+        "sampling_mask": [[] for _ in range(n_tokens)],
+        "sampler_ids": np.full((n_tokens, 0), -1, dtype=np.int64),
+        "sampler_log_probs": np.full((n_tokens, 0), -math.inf, dtype=np.float32),
+    }
+    names = {field.name for field in dataclasses.fields(RolloutSample)}
+    return {name: value for name, value in fields.items() if name in names}
 
 
 def samples(sequences):
@@ -30,11 +47,16 @@ def samples(sequences):
             "input_ids": np.asarray(ids),
             "completion_mask": np.asarray([0] * 4 + [1] * (len(ids) - 4)),
             "old_log_probs": np.zeros(len(ids), np.float32),
+            **unsampled(len(ids)),
             "advantage": 1.0,
             "group_id": i // 4,
         }
         for i, ids in enumerate(sequences)
     ]
+
+
+def _plain(value):
+    return value.tolist() if isinstance(value, torch.Tensor) else value
 
 
 def _same_plan(a, b):
@@ -74,21 +96,29 @@ def test_trl_rows_and_our_test_packer_agree():
     _same_plan(TreePlan.from_kwargs(trl_tree), TreePlan.from_kwargs(ours.kwargs()))
 
 
-def test_batch_of_trl_1_16():
+def test_batch_of_trl_rows():
+    """TRL's own rows, padded as its collator pads them: TRL 1.16 pads the tree with
+    ``-1``; TRL 1.17 pads it with ``0`` and reads it back with ``unpad_tree``."""
     sequences = branching_sequences()
     rows = [TreeRow(), TreeRow()]
     for sample in samples(sequences):
         rows[0].add(sample)
     for sample in samples(sequences[:2]):
         rows[1].add(sample)
-    packed, batch = _collated(rows, pad=-1)
+    unpad_tree = getattr(packing, "unpad_tree", None)
+    packed, batch = _collated(rows, pad=-1 if unpad_tree is None else 0)
     for rank, row in enumerate(packed):
-        tree = tree_kwargs_from_batch({k: v[rank : rank + 1] for k, v in batch.items()})
+        inputs = {k: v[rank : rank + 1] for k, v in batch.items()}
+        tree = tree_kwargs_from_batch(inputs)
         for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k"):
             assert tree[key].tolist() == row[key].tolist()
-        assert [tree["tree_max_seqlen_q"], tree["tree_max_seqlen_k"]] == row[
-            "tree_max_seqlens"
-        ].tolist()
+        assert tree["tree_max_seqlen_q"] == int(row["tree_cu_seqlens_q"].diff().max())
+        assert tree["tree_max_seqlen_k"] == int(row["tree_cu_seqlens_k"].diff().max())
+        if unpad_tree is not None:
+            expected = unpad_tree(inputs)
+            assert {k: _plain(v) for k, v in tree.items()} == {
+                k: _plain(v) for k, v in expected.items()
+            }
 
 
 def test_batch_of_trl_7686():

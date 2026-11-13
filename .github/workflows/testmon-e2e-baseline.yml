@@ -1,0 +1,69 @@
+name: Refresh general e2e baseline
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  single-gpu:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    env:
+      TESTMON_FULL: "true"
+      TESTMON_SELECT: "false"
+      TRANSFORMERS_IS_CI: "yes"
+      UV_SYSTEM_PYTHON: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.3
+            python_version: "3.12"
+            pytorch: 2.13.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.3
+            python_version: "3.14"
+            pytorch: 2.14.1
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.6.3 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2026.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=L40S" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
+      - name: Run testmon e2e job on Modal
+        run: |
+          modal run -m cicd.e2e_testmon

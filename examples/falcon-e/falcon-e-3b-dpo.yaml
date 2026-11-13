@@ -65,13 +65,15 @@ shuffle_merged_datasets: true
 experimental_skip_move_to_device: true
 
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: LlamaDecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true
 
 # Comment to disable CP
 # The number of GPUs to shard the model parameters across (FSDP dimension).

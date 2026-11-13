@@ -24,6 +24,13 @@ from axolotl.utils.dict import DictDefault  # noqa: E402
 PROJS = ("gate_proj", "up_proj", "down_proj")
 
 
+@pytest.fixture(autouse=True)
+def default_runtime():
+    RUNTIME.reset()
+    yield
+    RUNTIME.reset()
+
+
 def _per_expert(prefix, fmt):
     if fmt == "nvfp4":
         return {

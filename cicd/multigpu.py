@@ -4,23 +4,13 @@ modal application to run axolotl gpu tests in Modal
 
 import os
 import pathlib
-import tempfile
 
-import jinja2
 import modal
-from jinja2 import select_autoescape
-from modal import App, Image
+from modal import App
 
+from .ci_image import ci_image
 from .deep_ep import DEEP_EP_WHEELS, deep_ep_volume, install_deep_ep
-
-cicd_path = pathlib.Path(__file__).parent.resolve()
-
-template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
-template_env = jinja2.Environment(
-    loader=template_loader, autoescape=select_autoescape()
-)
-dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
-df_template = template_env.get_template(dockerfile)
+from .modal_testmon import run_local, run_remote
 
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
@@ -29,6 +19,8 @@ df_args = {
     "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.12-cu130-2.13.0"),
     "DEPS_HASH": os.environ.get("DEPS_HASH", "dev"),
     "CUDA": os.environ.get("CUDA", "130"),
+    "GPU_TYPE": os.environ.get("GPU_TYPE", "H100"),
+    "N_GPUS": os.environ.get("N_GPUS", "2"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "IMAGE_REF": os.environ.get("IMAGE_REF")
     or os.environ.get("GITHUB_REF", "refs/heads/main"),
@@ -43,21 +35,7 @@ df_args = {
     "E2E_SELECTED_TESTS": os.environ.get("E2E_SELECTED_TESTS", ""),
 }
 
-dockerfile_contents = df_template.render(**df_args)
-
-temp_dir = tempfile.mkdtemp()
-with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
-    f.write(dockerfile_contents)
-
-cicd_image = (
-    Image.from_dockerfile(
-        pathlib.Path(temp_dir) / "Dockerfile",
-        gpu="A10G",
-    )
-    # cwd leads sys.path; from the image's checkout it shadows the cicd/ Modal mounts at /root
-    .workdir("/root")
-    .env(df_args)
-)
+cicd_image = ci_image(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
 
@@ -126,7 +104,7 @@ def refresh_source(run_folder: str) -> None:
         return
     checkout_source(run_folder, os.environ.get("GITHUB_REF", "refs/heads/main"), sha)
     subprocess.run(  # nosec
-        ["uv", "pip", "install", "--no-build-isolation", "--no-deps", "-e", "."],
+        ["uv", "pip", "install", "--no-deps", "-e", "."],
         cwd=run_folder,
         check=True,
     )
@@ -155,22 +133,22 @@ def run_cmd(cmd: str, run_folder: str):
     ),
     volumes=VOLUME_CONFIG,
 )
-def cicd_pytest():
+def cicd_pytest(
+    state: dict[str, bytes] | None = None, full: bool = False, select: bool = False
+):
     suite = os.environ.get("MULTIGPU_TEST_SUITE", "multigpu")
-    scripts = {
-        "multigpu": "./cicd/multigpu.sh",
-        "nf4": "bash ./cicd/nf4.sh",
-        "nvfp4": "bash ./cicd/nvfp4.sh",
-        "multigpu_selected": "bash ./cicd/multigpu_selected.sh",
-        "gpu_slow_kernels": "bash ./cicd/gpu_slow.sh",
-        "gpu_slow_distributed": "bash ./cicd/gpu_slow.sh",
-        "gpu_slow_four_rank": "bash ./cicd/gpu_slow.sh",
-    }
     if suite in DEEP_EP_SUITES and install_deep_ep(DEEP_EP_WHEELS):
         deep_ep_volume.commit()
-    run_cmd(scripts[suite], "/workspace/axolotl")
+    if suite != "multigpu_selected":
+        refresh_source("/workspace/axolotl")
+        return run_remote("./cicd/multigpu_feature.sh", state or {}, full, select, True)
+    run_cmd("bash ./cicd/multigpu_selected.sh", "/workspace/axolotl")
+    return None
 
 
 @app.local_entrypoint()
 def main():
-    cicd_pytest.remote()
+    if os.environ.get("MULTIGPU_TEST_SUITE", "multigpu") != "multigpu_selected":
+        run_local(cicd_pytest)
+    else:
+        cicd_pytest.remote()

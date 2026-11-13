@@ -21,14 +21,9 @@ from axolotl.core.trainers.ebft.args import AxolotlEBFTConfig
 from axolotl.core.trainers.ebft.rewards import (
     apply_embed_method,
     extract_hidden_states,
-    get_alignment_rewards,
-    get_diversity_rewards,
-    whiten_embeddings_batched,
+    group_feature_rewards,
 )
-from axolotl.core.trainers.grpo.trainer import (
-    AxolotlAsyncGRPOTrainer,
-    AxolotlGRPOTrainer,
-)
+from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -133,54 +128,6 @@ class EBFTMixin:
             f"EBFT feature extraction from layers {self.feature_layer_indices} "
             f"(of {num_layers} total), embed_method={args.ebft_embed_method}"
         )
-        if args.ebft_adaptive_max_tokens:
-            LOG.info(
-                f"EBFT adaptive max_tokens enabled "
-                f"(gt_length_multiplier={args.ebft_gt_length_multiplier})"
-            )
-
-    _adaptive_max_lock = None  # initialized lazily
-
-    def _generate_only(self, inputs, rank0_only=False):
-        """Override to set per-batch max_tokens based on ground-truth length.
-
-        Uses a lock to prevent race conditions in async mode where concurrent
-        BG threads could interleave mutations of max_completion_length.
-        """
-        import threading
-
-        args = self.args
-        if (
-            args.ebft_adaptive_max_tokens
-            and hasattr(self, "vllm_generation")
-            and inputs
-        ):
-            gt_texts = [
-                x.get("ground_truth", "") for x in inputs if x.get("ground_truth")
-            ]
-            if gt_texts:
-                gt_token_counts = [
-                    len(self.processing_class.encode(gt, add_special_tokens=False))
-                    for gt in gt_texts
-                ]
-                multiplier = args.ebft_gt_length_multiplier
-                max_completion = self.vllm_generation.max_completion_length
-                adaptive_max = max(
-                    min(int(c * multiplier), max_completion) for c in gt_token_counts
-                )
-                adaptive_max = max(adaptive_max, 64)
-
-                if self._adaptive_max_lock is None:
-                    self._adaptive_max_lock = threading.Lock()
-                with self._adaptive_max_lock:
-                    original = self.vllm_generation.max_completion_length
-                    self.vllm_generation.max_completion_length = adaptive_max
-                    try:
-                        return super()._generate_only(inputs, rank0_only)
-                    finally:
-                        self.vllm_generation.max_completion_length = original
-
-        return super()._generate_only(inputs, rank0_only)
 
     @torch.no_grad()
     def _feature_matching_reward(
@@ -324,10 +271,8 @@ class EBFTMixin:
         )
 
         # --- Extract features from frozen feature network ---
-        # INVARIANT: disable_adapter() yields the unmodified base weights because
-        # _sync_peft_weights_no_merge and _sync_lora_adapter never call
-        # merge_adapter() — they compute merged weights as new tensors or save
-        # the adapter to filesystem. Base weights are never modified in-place.
+        # With PEFT this is the actor's base. TRL's merged vLLM sync folds the
+        # adapter in and back out in place, which leaves bf16 rounding error in it.
         if self._share_feature_weights:
             unwrapped = self.accelerator.unwrap_model(self.model)
             feature_ctx = unwrapped.disable_adapter()
@@ -361,45 +306,22 @@ class EBFTMixin:
             prompt_lengths=gt_prompt_lengths,
         )
 
-        # --- Optional whitening ---
-        batch_size = gen_emb.shape[0]
-        if args.ebft_use_whitening and batch_size > 1:
-            num_prompts = batch_size // num_gens
-            gen_reshaped = gen_emb.view(num_prompts, num_gens, -1)
-            whitened_gen_list = []
-            whitened_gt_list = []
-            for i in range(num_prompts):
-                w_gen, w_gt = whiten_embeddings_batched(
-                    gen_reshaped[i], gt_emb[i : i + 1]
-                )
-                whitened_gen_list.append(w_gen)
-                whitened_gt_list.append(w_gt)
-            gen_emb = torch.cat(whitened_gen_list, dim=0)
-            gt_emb = torch.cat(whitened_gt_list, dim=0)
-        else:
-            gen_emb = torch.nn.functional.normalize(gen_emb, p=2, dim=-1)
-            gt_emb = torch.nn.functional.normalize(gt_emb, p=2, dim=-1)
-
-        # Repeat gt_emb: each GT repeated num_generations times
-        gt_emb_expanded = gt_emb.repeat_interleave(num_gens, dim=0)
-
-        # --- Compute rewards ---
-        alignment = get_alignment_rewards(gen_emb, gt_emb_expanded)
-        diversity = get_diversity_rewards(gen_emb, num_gens)
-
-        # Scale by 2 per paper equation (7):
-        #   r_j = 2*φ(ŷ_j)^T*φ(y) - 2/(n-1) * Σ_{j'≠j} φ(ŷ_j)^T*φ(ŷ_{j'})
-        alignment = alignment * 2
-        diversity = diversity * 2
-
-        rewards = (
-            args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
-        )
-
-        # Compute CFM loss: ||E[φ(ŷ)] - φ(y)||^2 (paper eq 2)
-        gen_reshaped = gen_emb.view(-1, num_gens, gen_emb.shape[-1])
-        mean_gen = gen_reshaped.mean(dim=1)  # (num_prompts, D)
-        cfm_loss = ((mean_gen - gt_emb) ** 2).sum(dim=-1).mean()
+        # --- Rewards per prompt group ---
+        whiten = args.ebft_use_whitening and gen_emb.shape[0] > 1
+        per_group = [
+            group_feature_rewards(
+                gen_emb[i * num_gens : (i + 1) * num_gens],
+                gt_emb[i : i + 1],
+                whiten,
+                args.ebft_alignment_coef,
+                args.ebft_diversity_coef,
+            )
+            for i in range(gen_emb.shape[0] // num_gens)
+        ]
+        rewards = torch.cat([group[0] for group in per_group])
+        alignment = torch.cat([group[1] for group in per_group])
+        diversity = torch.cat([group[2] for group in per_group])
+        cfm_loss = torch.stack([group[3] for group in per_group]).mean()
 
         # Log feature-matching metrics to console and wandb
         _align = alignment.mean().item()
@@ -521,11 +443,5 @@ class EBFTMixin:
 
 class AxolotlEBFTTrainer(EBFTMixin, AxolotlGRPOTrainer):
     """EBFT trainer using synchronous GRPO (standard vLLM generation)."""
-
-    pass
-
-
-class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlAsyncGRPOTrainer):
-    """EBFT trainer using async GRPO (prefetches next batch during training)."""
 
     pass

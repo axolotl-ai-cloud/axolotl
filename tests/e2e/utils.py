@@ -17,6 +17,8 @@ from tbparse import SummaryReader
 
 from axolotl.utils.dict import DictDefault
 
+from tests.cuda_gates import AtSetup, cuda_capability_below
+
 
 def with_temp_dir(test_func):
     @wraps(test_func)
@@ -71,9 +73,10 @@ def flash_attn_available() -> bool:
     return available
 
 
-# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not.
+# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not. The hub
+# probe reads the device capability, so it runs once, at the first gated test's setup.
 requires_flash_attn = pytest.mark.skipif(
-    not flash_attn_available(),
+    AtSetup(lambda: not flash_attn_available()),
     reason="flash-attn unavailable: no package and no kernels-hub build for this torch",
 )
 
@@ -105,29 +108,24 @@ def require_llmcompressor(test_case):
 
 
 def requires_sm_ge_100(test_case):
-    is_sm_ge_100 = (
-        torch.cuda.is_available()
-        and torch.version.cuda
-        and torch.cuda.get_device_capability() >= (10, 0)
-    )
     return pytest.mark.gpu_blackwell(
-        unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+        pytest.mark.skipif(
+            not torch.version.cuda or cuda_capability_below(10),
+            reason="test requires sm>=100",
+        )(test_case)
     )
 
 
 def requires_cuda_ge_8_9(test_case):
-    is_cuda_ge_8_9 = (
-        torch.cuda.is_available()
-        and torch.version.cuda
-        and torch.cuda.get_device_capability() >= (8, 9)
-    )
-    return unittest.skipUnless(is_cuda_ge_8_9, "test requires cuda>=8.9")(test_case)
+    return pytest.mark.skipif(
+        not torch.version.cuda or cuda_capability_below(8, 9),
+        reason="test requires cuda>=8.9",
+    )(test_case)
 
 
 def supports_fp8(test_case):
-    compute_capability = torch.cuda.get_device_capability()
-    return unittest.skipUnless(
-        compute_capability >= (9, 0), "test requires h100 or newer GPU"
+    return pytest.mark.skipif(
+        cuda_capability_below(9), reason="test requires h100 or newer GPU"
     )(test_case)
 
 

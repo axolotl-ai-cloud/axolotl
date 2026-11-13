@@ -184,7 +184,7 @@ def test_expert_double_quant_follows_bnb_config_kwargs(monkeypatch, kwargs, expe
     assert moe_quant._moe_load_state["compress_statistics"] is expected
 
 
-@pytest.mark.gpu
+@pytest.mark.usefixtures("inferred_device")
 class TestMoeAdapterTrainMergeRoundtrip:
     """E2E: train adapter on quantized MoE experts, then merge onto plain model.
 

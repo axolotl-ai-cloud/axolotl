@@ -62,7 +62,29 @@ def _grouped_gram_configs():
     return [cfg]
 
 
-@triton.autotune(configs=_grouped_gram_configs(), key=["M_BUCKET", "WIDE", "RANK_IS_I"])
+class _DeviceSizedConfigs(list):
+    """Sizes the config on first read rather than at import, since the shared-memory query
+    initializes CUDA. Triton only truth-tests ``configs`` when decorating."""
+
+    def __bool__(self):
+        return True
+
+    def _filled(self):
+        if not list.__len__(self):
+            self[:] = _grouped_gram_configs()
+        return self
+
+    def __len__(self):
+        return list.__len__(self._filled())
+
+    def __getitem__(self, idx):
+        return list.__getitem__(self._filled(), idx)
+
+    def __iter__(self):
+        return list.__iter__(self._filled())
+
+
+@triton.autotune(configs=_DeviceSizedConfigs(), key=["M_BUCKET", "WIDE", "RANK_IS_I"])
 @triton.jit
 def _grouped_gram_kernel(
     P_ptr,

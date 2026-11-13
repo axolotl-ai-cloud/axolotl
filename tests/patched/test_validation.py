@@ -86,7 +86,7 @@ class TestValidation(BaseValidation):
             {
                 "torch_compile": True,
                 "torch_compile_regional": True,
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
             }
             | minimal_cfg
         )
@@ -96,15 +96,14 @@ class TestValidation(BaseValidation):
         ):
             validate_config(test_cfg)
 
-        test_cfg.gradient_checkpointing = False
+        test_cfg.activation_checkpointing = False
         validate_config(test_cfg)
 
     def test_zero3_qlora_use_reentrant_false(self, minimal_cfg):
         test_cfg = DictDefault(
             {
                 "deepspeed": "deepspeed_configs/zero3_bf16.json",
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -114,7 +113,8 @@ class TestValidation(BaseValidation):
         with self._caplog.at_level("WARNING"):
             validate_config(test_cfg)
             assert (
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+                "qlora + zero3 with activation_checkpointing.reentrant: false may "
+                "result in a CheckpointError about recomputed values"
                 in self._caplog.records[0].message
             )
 
@@ -122,8 +122,7 @@ class TestValidation(BaseValidation):
         test_cfg = DictDefault(
             {
                 "deepspeed": "",
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -136,8 +135,7 @@ class TestValidation(BaseValidation):
         test_cfg = DictDefault(
             {
                 "deepspeed": None,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -544,14 +542,14 @@ class TestValidation(BaseValidation):
         validate_config(cfg)
 
     def test_mpt_gradient_checkpointing(self, minimal_cfg):
-        regex_exp = r".*gradient_checkpointing is not supported for MPT models*"
+        regex_exp = r".*activation_checkpointing is not supported for MPT models*"
 
         # Check for lower-case
         cfg = (
             DictDefault(
                 {
                     "base_model": "mosaicml/mpt-7b",
-                    "gradient_checkpointing": True,
+                    "activation_checkpointing": True,
                 }
             )
             | minimal_cfg
@@ -1255,6 +1253,45 @@ class TestValidation(BaseValidation):
             validate_config(
                 DictDefault({"rl": "dpo", "dpo_ld_alpha": 1.5}) | minimal_cfg
             )
+
+    @pytest.mark.parametrize("rl", ["dpo", "ipo", "kto", "grpo", "gdpo"])
+    @pytest.mark.parametrize("targets", [["q_proj", "lm_head"], "lm_head"])
+    def test_fused_lm_head_rl_rejects_lm_head_lora(self, minimal_cfg, rl, targets):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": rl,
+                "adapter": "lora",
+                "lora_target_modules": targets,
+                "remove_unused_columns": False,
+            }
+        )
+        with pytest.raises(ValueError, match="lora_modules_to_save"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("rl", [None, "orpo"])
+    def test_lm_head_lora_allowed_without_fused_lm_head(self, minimal_cfg, rl):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": rl,
+                "adapter": "lora",
+                "lora_target_modules": ["q_proj", "lm_head"],
+            }
+        )
+        assert "lm_head" in validate_config(cfg).lora_target_modules
+
+    def test_fused_lm_head_rl_allows_lm_head_modules_to_save(self, minimal_cfg):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": "dpo",
+                "adapter": "lora",
+                "lora_target_modules": ["q_proj"],
+                "lora_modules_to_save": ["lm_head"],
+            }
+        )
+        assert validate_config(cfg).lora_modules_to_save == ["lm_head"]
 
     def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
         cfg = (
@@ -1978,6 +2015,25 @@ class TestDataloaderValidation(BaseValidation):
         assert new_cfg.dataloader_num_workers == 8
         assert new_cfg.dataloader_pin_memory is True
         assert new_cfg.dataloader_prefetch_factor == 256
+
+    def test_persistent_workers_keep_auto_defaults(self, minimal_cfg):
+        cfg = DictDefault({"dataloader_persistent_workers": True}) | minimal_cfg
+
+        new_cfg = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.dataloader_persistent_workers is True
+        assert new_cfg.dataloader_num_workers == 8
+
+    def test_persistent_workers_require_workers(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {"dataloader_num_workers": 0, "dataloader_persistent_workers": True}
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match="requires dataloader_num_workers > 0"):
+            validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
 
 
 class TestGCStepsMigration(BaseValidation):

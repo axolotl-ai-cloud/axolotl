@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import fire
 from transformers.hf_argparser import HfArgumentParser
@@ -41,7 +41,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     evaluate(cfg=cfg, dataset_meta=dataset_meta)
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_evaluate`.
 

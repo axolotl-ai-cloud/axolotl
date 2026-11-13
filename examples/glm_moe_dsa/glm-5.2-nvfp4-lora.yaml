@@ -62,9 +62,8 @@ learning_rate: 0.0002
 
 bf16: auto
 tf32: true
-gradient_checkpointing: true
+activation_checkpointing: true
 # Keep off under EP (headroom); set true for plain FSDP2 / tight memory.
-activation_offloading: false
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

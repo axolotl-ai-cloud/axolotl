@@ -6,6 +6,7 @@ import pytest
 import torch
 from transformers import Mamba2Config, MambaConfig
 
+from tests.accelerator import DEVICE_TYPE, device_module, gpu_available
 from tests.monkeypatch._mamba_model import MambaModelLoader
 
 
@@ -60,17 +61,17 @@ def test_fla_checkpoint_roundtrip(family, tied, tmp_path, monkeypatch):
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="FLA kernels require a GPU")
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
 @pytest.mark.parametrize("batch_size", [1, 2])
 def test_fla_packing_gradients_and_cache(family, batch_size):
     pytest.importorskip("fla")
     torch.manual_seed(5)
-    model = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16)
-    ids = torch.randint(0, 64, (batch_size, 48), device="cuda")
+    model = MambaModelLoader(_config(family)).to(DEVICE_TYPE).to(torch.bfloat16)
+    ids = torch.randint(0, 64, (batch_size, 48), device=DEVICE_TYPE)
     position_ids = (
         torch.cat([torch.arange(17), torch.arange(31)])
-        .cuda()[None]
+        .to(DEVICE_TYPE)[None]
         .expand(batch_size, -1)
     )
     denominator = batch_size * 46
@@ -262,7 +263,7 @@ def test_fla_adapter_target_validation(target, monkeypatch):
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="FLA kernels require a GPU")
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
 @pytest.mark.parametrize(
     "targets", [["in_proj"], ["out_proj"], ["in_proj", "out_proj"]]
@@ -272,7 +273,7 @@ def test_fla_lora_gradients_packing_and_reload(family, targets, tmp_path):
     from peft import LoraConfig, PeftModel, get_peft_model
 
     torch.manual_seed(42)
-    base = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16)
+    base = MambaModelLoader(_config(family)).to(DEVICE_TYPE).to(torch.bfloat16)
     original = copy.deepcopy(base)
     model = get_peft_model(
         base,
@@ -286,9 +287,11 @@ def test_fla_lora_gradients_packing_and_reload(family, targets, tmp_path):
     for name, parameter in model.named_parameters():
         if "lora_B" in name:
             torch.nn.init.normal_(parameter, std=0.05)
-    ids = torch.randint(0, 64, (2, 48), device="cuda")
+    ids = torch.randint(0, 64, (2, 48), device=DEVICE_TYPE)
     positions = (
-        torch.cat([torch.arange(17), torch.arange(31)]).cuda()[None].expand(2, -1)
+        torch.cat([torch.arange(17), torch.arange(31)])
+        .to(DEVICE_TYPE)[None]
+        .expand(2, -1)
     )
     model.train()
     model.gradient_checkpointing_enable(
@@ -600,7 +603,7 @@ def test_native_packing_after_mixer_registration(monkeypatch):
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="FLA kernels require a GPU")
 @pytest.mark.parametrize("family,groups", [("mamba", 1), ("mamba2", 1), ("mamba2", 2)])
 def test_fla_mixer_cuda_matches_native_reference(family, groups):
     pytest.importorskip("fla")
@@ -613,10 +616,10 @@ def test_fla_mixer_cuda_matches_native_reference(family, groups):
     config.mamba_backend = "fla"
     model = MambaModelLoader(config)
     model.load_state_dict(reference.state_dict())
-    model = model.cuda()
+    model = model.to(DEVICE_TYPE)
     ids = torch.randint(0, config.vocab_size, (2, 31))
     expected = reference(input_ids=ids, labels=ids)
-    actual = model(input_ids=ids.cuda(), labels=ids.cuda())
+    actual = model(input_ids=ids.to(DEVICE_TYPE), labels=ids.to(DEVICE_TYPE))
     torch.testing.assert_close(
         actual.logits.float().cpu(), expected.logits, atol=1e-4, rtol=1e-4
     )
@@ -748,19 +751,21 @@ def test_fla_offloaded_child_weights_are_loaded_for_raw_access(family, monkeypat
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="FLA kernels require a GPU")
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
 def test_fla_cpu_offload_cuda_parity(family):
     pytest.importorskip("fla")
     from accelerate import cpu_offload
 
-    model = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16).eval()
-    ids = torch.randint(0, model.config.vocab_size, (1, 17), device="cuda")
+    model = MambaModelLoader(_config(family)).to(DEVICE_TYPE).to(torch.bfloat16).eval()
+    ids = torch.randint(0, model.config.vocab_size, (1, 17), device=DEVICE_TYPE)
     with torch.no_grad():
         expected = model(input_ids=ids).logits
         cpu_offload(
             model.cpu(),
-            execution_device=torch.device("cuda", torch.cuda.current_device()),
+            execution_device=torch.device(
+                DEVICE_TYPE, device_module().current_device()
+            ),
         )
         for _ in range(2):
             torch.testing.assert_close(model(input_ids=ids).logits, expected)

@@ -27,7 +27,6 @@ from transformers import (
     Trainer,
     TrainerCallback,
 )
-from transformers.trainer_utils import seed_worker
 from trl import GRPOTrainer
 from trl.data_utils import (
     apply_chat_template,
@@ -40,13 +39,15 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
-from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
-from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
+from axolotl.core.trainers.async_grpo.trainer import (
+    AxolotlAsyncGRPOTrainer,  # noqa: F401
+)
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointWriteRetryMixin,
     DistributedParallelMixin,
+    LoraMergeCheckMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )
@@ -54,6 +55,7 @@ from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, Optimizer
 from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
 from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
+from axolotl.utils.worker_seed import seed_worker
 
 if is_peft_available():
     from peft import PeftConfig
@@ -82,21 +84,6 @@ class AxolotlGRPOTrainer(
         if getattr(self, "vllm_generation", None) is not None:
             exact_unmerge_vllm_sync(self.vllm_generation)
             merge_aware_vllm_sync(self.vllm_generation)
-
-
-class AxolotlAsyncGRPOTrainer(
-    CheckpointWriteRetryMixin,
-    RngLoaderMixin,
-    SchedulerMixin,
-    OptimizerMixin,
-    OptimizerInitMixin,
-    DistributedParallelMixin,
-    ActivationOffloadingMixin,
-    FastAsyncGRPOTrainer,
-):
-    """Extend AsyncGRPOTrainer with axolotl helpers"""
-
-    _tag_names = ["trl", "grpo", "async", "axolotl"]
 
 
 class AxolotlGRPOContextParallelTrainer(AxolotlGRPOTrainer):

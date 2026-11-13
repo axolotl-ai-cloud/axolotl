@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from threading import Thread
-from typing import Union
+from typing import Any, Union
 
 import fire
 import torch
@@ -285,7 +285,7 @@ def do_cli(
     config: Union[Path, str] = Path("examples/"),
     gradio: bool = False,
     chat: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """
     Parses axolotl config, CLI args, and calls `do_inference`, `do_inference_gradio`,

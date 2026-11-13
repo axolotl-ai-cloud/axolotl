@@ -4,7 +4,7 @@ Packed data loader for online teacher training supporting vllm and sglang.
 
 import hashlib
 import hmac
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 import torch
@@ -18,7 +18,9 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def hmac_sha_from_int_list(int_list, key, hash_func=hashlib.sha256):
+def hmac_sha_from_int_list(
+    int_list: List[int], key: str | bytes, hash_func: Callable = hashlib.sha256
+) -> str:
     """
     Create HMAC-SHA hash from a list of integers
 

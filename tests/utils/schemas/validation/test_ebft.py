@@ -37,23 +37,45 @@ class TestEBFTValidation:
             rl="ebft",
             ebft={"mode": "strided"},
             attn_implementation="flex_attention",
-            gradient_checkpointing=True,
+            activation_checkpointing=True,
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+        assert cfg.activation_checkpointing.reentrant is True
 
     def test_strided_flex_attention_rejects_activation_offloading(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             rl="ebft",
             ebft={"mode": "strided"},
             attn_implementation="flex_attention",
-            gradient_checkpointing=True,
-            activation_offloading=True,
+            activation_checkpointing={"enabled": True, "offload": {"all": "cpu"}},
         )
 
         with pytest.raises(ValidationError, match="incompatible with"):
             validate_config(cfg)
+
+    def test_structured_async_runs_the_async_grpo_checks(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="ebft",
+            ebft={"mode": "structured"},
+            max_steps=10,
+            trl={"use_vllm": True, "async_prefetch": True, "loss_type": "grpo"},
+        )
+
+        with pytest.raises(ValidationError, match="rl: ebft runs on TRL's AsyncGRPO"):
+            validate_config(cfg)
+
+        cfg.trl.loss_type = None
+        assert validate_config(cfg).trl.async_prefetch
+
+    def test_strided_async_is_not_async_grpo(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="ebft",
+            ebft={"mode": "strided"},
+            trl={"async_prefetch": True, "loss_type": "grpo"},
+        )
+
+        validate_config(cfg)
 
     @pytest.mark.parametrize(
         "config_path",

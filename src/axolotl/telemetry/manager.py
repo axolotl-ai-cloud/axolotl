@@ -6,6 +6,7 @@ import math
 import os
 import platform
 import uuid
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -125,13 +126,6 @@ class TelemetryManager:
         if self.enabled:
             self.run_id = str(uuid.uuid4())
             self.whitelist = self._load_whitelist()
-
-            try:
-                self.system_info = self._get_system_info()
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                LOG.warning(f"Error during system info collection: {e}")
-                self.system_info = None
-
             self._init_posthog()
 
             # Register shutdown method to flush posthog telemetry
@@ -262,6 +256,16 @@ class TelemetryManager:
         redacted = {k: redact_value(v, k) for k, v in properties.items()}
 
         return redacted
+
+    @cached_property
+    def system_info(self) -> dict[str, Any] | None:
+        # Collected on first send, not in __init__: the manager is built at import time and
+        # querying device names initializes CUDA.
+        try:
+            return self._get_system_info()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            LOG.warning(f"Error during system info collection: {e}")
+            return None
 
     def _get_system_info(self) -> dict[str, Any]:
         """Collect system information for various hardware accelerators"""

@@ -74,16 +74,6 @@ class TestRMSNormGatedForward:
         else:
             torch.testing.assert_close(y_fused, y_eager, atol=1e-2, rtol=1e-2)
 
-    def test_output_shape(self, dtype, shape):
-        B, T, H = shape
-        X = torch.randn(B, T, H, dtype=dtype, device="cuda")
-        G = torch.randn(B, T, H, dtype=dtype, device="cuda")
-
-        fused = FusedRMSNormGated(H).to(dtype=dtype, device="cuda")
-        y = fused(X, gate=G)
-        assert y.shape == (B, T, H)
-        assert y.dtype == dtype
-
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize(
@@ -99,7 +89,7 @@ class TestRMSNormGatedForward:
     ],
 )
 class TestRMSNormGatedBackward:
-    def test_grad_x(self, dtype, shape):
+    def test_gradients(self, dtype, shape):
         torch.manual_seed(42)
         B, T, H = shape
         X = torch.randn(B, T, H, dtype=dtype, device="cuda", requires_grad=True)
@@ -124,57 +114,7 @@ class TestRMSNormGatedBackward:
             atol, rtol = 5e-2, 5e-2
 
         torch.testing.assert_close(X.grad, X_ref.grad, atol=atol, rtol=rtol)
-
-    def test_grad_gate(self, dtype, shape):
-        torch.manual_seed(42)
-        B, T, H = shape
-        X = torch.randn(B, T, H, dtype=dtype, device="cuda", requires_grad=True)
-        G = torch.randn(B, T, H, dtype=dtype, device="cuda", requires_grad=True)
-        X_ref = X.detach().clone().requires_grad_(True)
-        G_ref = G.detach().clone().requires_grad_(True)
-
-        eager = EagerRMSNormGated(H).to(dtype=dtype, device="cuda")
-        fused = FusedRMSNormGated(H).to(dtype=dtype, device="cuda")
-        _sync_weights(eager, fused)
-
-        y_eager = eager(X_ref, gate=G_ref)
-        y_fused = fused(X, gate=G)
-
-        grad_out = torch.randn_like(y_eager)
-        y_eager.backward(grad_out)
-        y_fused.backward(grad_out)
-
-        if dtype == torch.float32:
-            atol, rtol = 1e-4, 1e-4
-        else:
-            atol, rtol = 5e-2, 5e-2
-
         torch.testing.assert_close(G.grad, G_ref.grad, atol=atol, rtol=rtol)
-
-    def test_grad_weight(self, dtype, shape):
-        torch.manual_seed(42)
-        B, T, H = shape
-        X = torch.randn(B, T, H, dtype=dtype, device="cuda", requires_grad=True)
-        G = torch.randn(B, T, H, dtype=dtype, device="cuda", requires_grad=True)
-        X_ref = X.detach().clone().requires_grad_(True)
-        G_ref = G.detach().clone().requires_grad_(True)
-
-        eager = EagerRMSNormGated(H).to(dtype=dtype, device="cuda")
-        fused = FusedRMSNormGated(H).to(dtype=dtype, device="cuda")
-        _sync_weights(eager, fused)
-
-        y_eager = eager(X_ref, gate=G_ref)
-        y_fused = fused(X, gate=G)
-
-        grad_out = torch.randn_like(y_eager)
-        y_eager.backward(grad_out)
-        y_fused.backward(grad_out)
-
-        if dtype == torch.float32:
-            atol, rtol = 1e-4, 1e-4
-        else:
-            atol, rtol = 5e-2, 5e-2
-
         torch.testing.assert_close(
             fused.weight.grad, eager.weight.grad, atol=atol, rtol=rtol
         )

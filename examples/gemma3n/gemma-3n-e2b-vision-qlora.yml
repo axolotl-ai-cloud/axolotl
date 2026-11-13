@@ -63,9 +63,9 @@ bf16: true
 fp16:
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 logging_steps: 1
 # flash_attention: true  # Any attention impl does not work with gemma3n now
 

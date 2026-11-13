@@ -115,7 +115,7 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
         Output tensor of shape `[..., hidden_dim]`.
     """
     n_elements = gate.numel()
-    out = torch.empty(gate.shape, dtype=gate.dtype, device="cuda")
+    out = torch.empty(gate.shape, dtype=gate.dtype, device=gate.device)
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
     _swiglu_fwd_kernel[grid](

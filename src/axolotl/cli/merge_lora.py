@@ -2,7 +2,7 @@
 
 import shutil
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import fire
 import torch
@@ -40,10 +40,11 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
 
 
 def _do_merge_lora(*, cfg: DictDefault) -> None:
-    if str(getattr(cfg, "adapter", None)) == "mixlora":
+    adapter = getattr(cfg, "adapter", None)
+    if not PluginManager.get_instance().adapter_supports_merge(adapter):
         raise NotImplementedError(
-            "merge-lora is not supported for `adapter: mixlora` — MixLoRA experts "
-            "are not merged into the base model. Load the trained checkpoint "
+            f"merge-lora is not supported for `adapter: {adapter}` — this adapter's "
+            "weights are not merged into the base model. Load the trained checkpoint "
             "directly via `lora_model_dir` instead."
         )
 
@@ -219,7 +220,7 @@ def do_cli(
     config: Union[Path, str] = Path("examples/"),
     dequant: bool = False,
     override_quantizer: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various

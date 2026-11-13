@@ -241,19 +241,18 @@ class TestPatchManagerOrdering:
     """Pin the patch-manager ordering invariant."""
 
     def test_self_attn_lora_runs_before_model_specific(self):
-        import inspect
+        from unittest.mock import Mock, call
 
         from axolotl.loaders.patch_manager import PatchManager
 
-        src = inspect.getsource(PatchManager.apply_pre_model_load_patches)
-        lora_idx = src.find("_apply_self_attention_lora_patch()")
-        specific_idx = src.find("_apply_model_specific_patches()")
-        assert lora_idx > 0 and specific_idx > 0
-        assert lora_idx < specific_idx, (
-            "_apply_self_attention_lora_patch must run before "
-            "_apply_model_specific_patches so patch_self_attn_lora sees the "
-            "stock attention forward source"
-        )
+        manager = Mock(spec=PatchManager)
+        PatchManager.apply_pre_model_load_patches(manager)
+
+        manager._apply_self_attention_lora_patch.assert_called_once_with()
+        manager._apply_model_specific_patches.assert_called_once_with()
+        assert manager.method_calls.index(
+            call._apply_self_attention_lora_patch()
+        ) < manager.method_calls.index(call._apply_model_specific_patches())
 
 
 class TestQwen3MoeFusedAttnParity:

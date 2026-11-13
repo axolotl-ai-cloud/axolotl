@@ -8,6 +8,7 @@
 
 """Pydantic args for the Expert-Parallel plugin."""
 
+from importlib.util import find_spec
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -40,8 +41,8 @@ class ExpertParallelArgs(BaseModel):
     expert_parallel_fallback_on_unsupported: bool = True
 
     expert_parallel_save_dispatch: bool = False
-    """``torch`` backend under activation checkpointing (``gradient_checkpointing`` or FSDP2
-    ``fsdp_config.activation_checkpointing``): save the dispatch/combine all-to-all outputs so
+    """``torch`` backend under activation checkpointing (``activation_checkpointing`` with
+    either implementation): save the dispatch/combine all-to-all outputs so
     backward does not re-issue the collectives, at the cost of holding the received rows per
     layer (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recomputing them cost 1.6 s/step on
     a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable this on
@@ -69,6 +70,23 @@ class ExpertParallelArgs(BaseModel):
             raise ValueError(
                 f"expert_parallel_token_capacity must be >= 1 when set "
                 f"(got {self.expert_parallel_token_capacity!r}). Use None to disable the cap."
+            )
+
+        if (
+            self.expert_parallel_size > 1
+            and self.expert_parallel_backend == "deep_ep"
+            and find_spec("deep_ep") is None
+        ):
+            outcome = (
+                "expert parallelism will be skipped at model load and the experts "
+                "sharded like any other weight"
+                if self.expert_parallel_fallback_on_unsupported
+                else "model loading will fail"
+            )
+            LOG.warning(
+                f"expert_parallel_backend: deep_ep, but `deep_ep` is not installed here: "
+                f"{outcome}. Use an image with DeepEP (the -blackwell cloud image) or "
+                "set expert_parallel_backend: torch (or auto)."
             )
 
         if self.expert_parallel_size > 1 and self.expert_parallel_num_rdma_bytes != 0:

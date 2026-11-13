@@ -3,6 +3,9 @@
 from enum import Enum
 
 import torch
+from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema, core_schema
 
 
 class TorchAOQuantDType(Enum):
@@ -12,6 +15,27 @@ class TorchAOQuantDType(Enum):
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
     ternary = "ternary"
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: type, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        schema = dict(handler(source))
+        schema["serialization"] = core_schema.plain_serializer_function_ser_schema(
+            lambda value: value.name,
+            return_schema=core_schema.str_schema(),
+            when_used="json",
+        )
+        return schema
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, _schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        names = [dtype.name for dtype in cls]
+        if handler.mode == "validation":
+            names.extend(["fp8", "float8"])
+        return {"type": "string", "enum": names, "title": cls.__name__}
 
     def from_string(str):
         if str == "int4":
@@ -39,6 +63,25 @@ class RLType(str, Enum):
     KTO = "kto"
     SIMPO = "simpo"
     EBFT = "ebft"
+
+
+# TRL scores these trainers' tokens with its fused LM head (`add_fused_lm_head`),
+# which runs the backbone and reads `lm_head.weight` without the CausalLM forward.
+# EBFT does too, on the GRPO trainers, except in strided mode.
+FUSED_LM_HEAD_RL_TYPES = frozenset(
+    {RLType.DPO, RLType.IPO, RLType.KTO, RLType.GRPO, RLType.GDPO, RLType.EBFT}
+)
+
+
+def rl_uses_fused_lm_head(cfg) -> bool:
+    """Whether the config's RL trainer scores tokens with TRL's fused LM head."""
+    try:
+        rl = RLType(cfg.get("rl"))
+    except ValueError:
+        return False
+    if rl is RLType.EBFT and (cfg.get("ebft") or {}).get("mode") == "strided":
+        return False
+    return rl in FUSED_LM_HEAD_RL_TYPES
 
 
 class ChatTemplate(str, Enum):

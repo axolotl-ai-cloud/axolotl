@@ -8,7 +8,6 @@ Two modes:
 from typing import Any
 
 from axolotl.core.trainers.ebft.args import (
-    AxolotlAsyncEBFTConfig,
     AxolotlEBFTConfig,
     AxolotlStridedEBFTConfig,
 )
@@ -25,6 +24,16 @@ def _get_ebft_mode(cfg: DictDefault) -> str:
 class EBFTStrategy:
     """Strategy for EBFT training — dispatches between structured and strided modes."""
 
+    @staticmethod
+    def is_async(cfg: DictDefault | None) -> bool:
+        """Structured mode with `async_prefetch` runs on TRL's AsyncGRPOTrainer."""
+        return bool(
+            cfg
+            and _get_ebft_mode(cfg) == "structured"
+            and cfg.trl
+            and cfg.trl.async_prefetch
+        )
+
     @classmethod
     def get_trainer_class(cls, cfg: DictDefault | None = None):
         mode = _get_ebft_mode(cfg) if cfg else "structured"
@@ -32,20 +41,10 @@ class EBFTStrategy:
             from axolotl.core.trainers.ebft.strided import AxolotlStridedEBFTTrainer
 
             return AxolotlStridedEBFTTrainer
-
-        # Structured mode: async or sync
-        # use_data_producer also triggers async trainer (needed for LoRA sync
-        # without async_prefetch, since sync trainer lacks LoRA sync support)
-        use_async = (
-            cfg
-            and cfg.trl
-            and (
-                getattr(cfg.trl, "async_prefetch", False)
-                or getattr(cfg.trl, "use_data_producer", False)
+        if cls.is_async(cfg):
+            from axolotl.core.trainers.ebft.async_trainer import (
+                AxolotlAsyncEBFTTrainer,
             )
-        )
-        if use_async:
-            from axolotl.core.trainers.ebft.trainer import AxolotlAsyncEBFTTrainer
 
             return AxolotlAsyncEBFTTrainer
         from axolotl.core.trainers.ebft.trainer import AxolotlEBFTTrainer
@@ -57,17 +56,11 @@ class EBFTStrategy:
         mode = _get_ebft_mode(cfg) if cfg else "structured"
         if mode == "strided":
             return AxolotlStridedEBFTConfig
-
-        # Structured mode: async or sync config
-        use_async = (
-            cfg
-            and cfg.trl
-            and (
-                getattr(cfg.trl, "async_prefetch", False)
-                or getattr(cfg.trl, "use_data_producer", False)
+        if cls.is_async(cfg):
+            from axolotl.core.trainers.ebft.async_trainer import (
+                AxolotlAsyncEBFTConfig,
             )
-        )
-        if use_async:
+
             return AxolotlAsyncEBFTConfig
         return AxolotlEBFTConfig
 
@@ -101,7 +94,13 @@ class EBFTStrategy:
             if getattr(ebft, "gt_length_multiplier", None) is not None:
                 kwargs["ebft_gt_length_multiplier"] = ebft.gt_length_multiplier
 
-        if mode == "strided":
+        if cls.is_async(cfg):
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
+            kwargs.update(GRPOStrategy.set_async_training_args_kwargs(cfg))
+            if cfg.trl.generation_kwargs is not None:
+                kwargs["generation_kwargs"] = cfg.trl.generation_kwargs
+        elif mode == "strided":
             # Strided-specific fields
             if ebft:
                 if ebft.stride is not None:
@@ -170,11 +169,6 @@ class EBFTStrategy:
                 if trl.chat_template_kwargs is not None:
                     kwargs["chat_template_kwargs"] = trl.chat_template_kwargs
 
-                # Async prefetch fields (only pass when enabled — sync config doesn't have these)
-                if getattr(trl, "async_prefetch", False):
-                    kwargs["async_prefetch"] = trl.async_prefetch
-                    if getattr(trl, "vllm_sync_interval", None) is not None:
-                        kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
                 if getattr(trl, "vllm_lora_sync", False):
                     kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 

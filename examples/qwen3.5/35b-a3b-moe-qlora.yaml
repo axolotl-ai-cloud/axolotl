@@ -72,8 +72,10 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-activation_offloading: true
+activation_checkpointing:
+  enabled: true
+  offload:
+    all: cpu
 resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2

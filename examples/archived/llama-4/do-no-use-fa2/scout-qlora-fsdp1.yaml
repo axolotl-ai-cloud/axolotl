@@ -76,6 +76,9 @@ weight_decay: 0.0
 fsdp:
   - auto_wrap
   - full_shard
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
   fsdp_limit_all_gathers: true
@@ -86,7 +89,6 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
-  fsdp_activation_checkpointing: true
 special_tokens:
   pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>

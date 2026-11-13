@@ -24,10 +24,11 @@ def test_amp_decorators_resolve_a_valid_device_type():
     torch.testing.assert_close(double(torch.ones(3)), torch.full((3,), 2.0))
 
 
-@pytest.mark.gpu
-def test_cpu_offloaded_checkpointer_matches_baseline():
-    """Forward/backward roundtrip on whichever device this test runs on."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_cpu_offloaded_checkpointer_matches_baseline(device):
+    """Forward/backward roundtrip with the hidden states on ``device``."""
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA required")
 
     def forward_function(hidden_states, weight):
         return hidden_states @ weight

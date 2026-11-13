@@ -19,9 +19,13 @@ from transformers.utils.import_utils import (
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.activation_checkpointing import (
+    migrate_legacy_checkpointing_keys,
+)
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RLType,
+    rl_uses_fused_lm_head,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
@@ -235,9 +239,48 @@ def _get_kernel_from_cache(repo_id: str, version: int | None):
     raise FileNotFoundError(f"no loadable cached snapshot of {repo_id}{detail}")
 
 
+def _raw_checkpointing(data: dict) -> dict:
+    """The `activation_checkpointing` block as written, for `mode="before"` validators."""
+    block = data.get("activation_checkpointing")
+    if block is True:
+        return {"enabled": True}
+    if not isinstance(block, dict):
+        return {"enabled": False}
+    block = {"enabled": True, **block}
+    kwargs = block.get("kwargs") or {}
+    if block.get("reentrant") is None and "use_reentrant" in kwargs:
+        block["reentrant"] = kwargs["use_reentrant"]
+    return block
+
+
+def _hf_checkpointing(checkpointing) -> bool:
+    """Whether transformers' layer checkpointing (not FSDP's wrapper) is on."""
+    get = (
+        checkpointing.get
+        if isinstance(checkpointing, dict)
+        else lambda name, default=None: getattr(checkpointing, name, default)
+    )
+    return bool(get("enabled")) and get("implementation", "hf") == "hf"
+
+
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 FSDP1_MIGRATION_DOCS = "docs/multi-gpu.qmd#sec-migrate-fsdp1-fsdp2"
+
+DATA_PRODUCER_MIGRATION_DOCS = "docs/grpo.qmd#sec-data-producer-migration"
+
+# `trl` options of the removed data producer trainer; the value says what replaces each
+DATA_PRODUCER_REMOVED_OPTIONS = {
+    "prefetch_depth": "`trl.max_staleness`, how many weight syncs a rollout may lag",
+    "streaming_partial_batch": "none needed, async GRPO scores each group as it "
+    "finishes",
+    "streaming_min_groups": "none needed, async GRPO scores each group as it finishes",
+    "replay_buffer_size": "none, each rollout is trained on once and "
+    "`trl.skip_zero_advantage_batches` drops samples without signal",
+    "replay_recompute_logps": "none, see replay_buffer_size",
+    "reroll_start_fraction": "none",
+    "reroll_max_groups": "none",
+}
 
 # fsdp_config keys accelerate rejects under FSDP2; the value names the FSDP2 replacement
 FSDP1_ONLY_REJECTED_KEYS = {
@@ -738,15 +781,15 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
-        fsdp_config = data.get("fsdp_config") or {}
-        if data.get("fp8") and (
-            fsdp_config.get("activation_checkpointing", False) is True
-            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
+        checkpointing = _raw_checkpointing(data)
+        if (
+            data.get("fp8")
+            and checkpointing["enabled"]
+            and checkpointing.get("implementation") == "fsdp"
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
-                "training. Please considering setting `activation_checkpointing: false` "
-                "in your FSDP config."
+                "training. Please consider setting `activation_checkpointing: false`."
             )
         if data.get("fp8_enable_fsdp_float8_all_gather") and not data.get(
             "fsdp_config"
@@ -762,13 +805,12 @@ class TrainingValidationMixin:
     def check_use_reentrant_mismatch(cls, data):
         if (
             data.get("unfrozen_parameters")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is True
+            and _raw_checkpointing(data).get("reentrant") is True
         ):
             # https://github.com/huggingface/transformers/issues/21381
             raise ValueError(
-                "`use_reentrant` must be false when used with partially frozen model."
+                "`activation_checkpointing.reentrant` must be false when used with "
+                "partially frozen model."
             )
         return data
 
@@ -919,15 +961,8 @@ class LoRAValidationMixin:
 
     @model_validator(mode="after")
     def check_fused_lora(self):
-        if self.adapter in ["lora", "qlora", "mixlora"] and self.flash_attn_fuse_mlp:
+        if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
-        if self.adapter == "mixlora" and getattr(self, "flash_attn_fuse_qkv", False):
-            raise ValueError("flash_attn_fuse_qkv is not supported with MixLoRA")
-        if self.adapter == "mixlora" and self.rl is not None:
-            raise ValueError(
-                "MixLoRA is not compatible with RL training (DPO/KTO/GRPO). "
-                "Use adapter: lora or qlora for RL fine-tuning."
-            )
         return self
 
     @model_validator(mode="after")
@@ -941,9 +976,7 @@ class LoRAValidationMixin:
     def warn_qlora_zero3_w_use_reentrant(cls, data):
         if (
             data.get("adapter") == "qlora"
-            and data.get("gradient_checkpointing_kwargs", {})
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is False
+            and _raw_checkpointing(data).get("reentrant") is False
             and data.get("deepspeed", "") is not None
             and "zero3" in data.get("deepspeed", "")
         ):
@@ -952,7 +985,8 @@ class LoRAValidationMixin:
             # Recomputed values for the following tensors have different metadata
             # than during the forward pass.
             LOG.warning(
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+                "qlora + zero3 with activation_checkpointing.reentrant: false may "
+                "result in a CheckpointError about recomputed values"
             )
         return data
 
@@ -1103,25 +1137,25 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_rl_config_gradient_checkpointing(cls, data):
+    def check_rl_config_activation_checkpointing(cls, data):
         # TODO: SalmanMohammadi
-        # Distributed RL with QLoRA + gradient checkpointing
+        # Distributed RL with QLoRA + activation checkpointing
         # and use_reentrant = True is broken upstream in TRL
 
+        checkpointing = _raw_checkpointing(data)
         if (
             data.get("rl")
-            and data.get("gradient_checkpointing")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
+            and checkpointing["enabled"]
+            and checkpointing.get("reentrant")
             and data.get("load_in_4bit")
             and data.get("adapter") == "qlora"
             and data.get("capabilities")
             and data.get("capabilities").get("n_gpu", 1) > 1
         ):
             raise ValueError(
-                "The `use_reentrant: True` implementation of gradient checkpointing "
-                "is not supported for distributed RL training with QLoRA. Please set "
-                "`use_reentrant: False` in `gradient_checkpointing_kwargs`."
+                "Reentrant activation checkpointing is not supported for distributed "
+                "RL training with QLoRA. Please set "
+                "`activation_checkpointing.reentrant: false`."
             )
         return data
 
@@ -1174,6 +1208,24 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_fused_lm_head_rl(cls, data):
+        rl = data.get("rl")
+        if not rl_uses_fused_lm_head(data):
+            return data
+        targets = data.get("lora_target_modules") or []
+        if isinstance(targets, str):
+            targets = [targets]
+        if data.get("adapter") and any("lm_head" in t for t in targets):
+            raise ValueError(
+                f"rl: {rl} scores tokens with TRL's fused LM head, which reads "
+                "`lm_head.weight` directly, so a LoRA adapter on `lm_head` would never "
+                "train. Remove `lm_head` from `lora_target_modules` and add it to "
+                "`lora_modules_to_save` to train the head."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
         """Surface GRPO batch-shape mismatches at config-parse time.
 
@@ -1205,6 +1257,10 @@ class RLValidationMixin:
                 "With num_generations=1, every group has zero advantage and "
                 "the policy never updates."
             )
+        if trl_cfg.get("async_prefetch") or trl_cfg.get("use_data_producer"):
+            # Async GRPO generates each prompt's group in its rollout worker and packs
+            # trained samples by token budget, so a step need not hold whole groups.
+            return data
 
         # Without `capabilities` populated yet (mode='before'), fall back to
         # user-set distributed fields.
@@ -2198,62 +2254,29 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="after")
     def check_mpt_checkpointing(self):
-        if (
-            self.base_model and "mpt" in self.base_model.lower()
-        ) and self.gradient_checkpointing:
-            raise ValueError("gradient_checkpointing is not supported for MPT models")
+        if (self.base_model and "mpt" in self.base_model.lower()) and _hf_checkpointing(
+            self.activation_checkpointing
+        ):
+            raise ValueError("activation_checkpointing is not supported for MPT models")
         return self
 
     @model_validator(mode="before")
     @classmethod
-    def check_offload_modes(cls, data):
+    def migrate_legacy_checkpointing(cls, data):
         if not isinstance(data, dict):
             return data
-        if (
-            data.get("activation_offloading") == "disk"
-            or data.get("gradient_checkpointing") == "offload_disk"
-        ):
-            raise ValueError(
-                "activation_offloading: disk is disabled: it never offloaded to disk "
-                "(it ran the same CPU offloader as activation_offloading: true). Use "
-                "activation_offloading: true or hidden_states."
-            )
-        if data.get("activation_offloading") == "legacy":
-            LOG.warning(
-                "activation_offloading: legacy is deprecated and is now an alias of "
-                "activation_offloading: true"
-            )
-            data["activation_offloading"] = True
+        data = dict(data)
+        warning = migrate_legacy_checkpointing_keys(data)
+        if warning:
+            LOG.warning(warning)
         return data
 
     @model_validator(mode="after")
-    def check_gradient_checkpointing_w_offload(self):
-        if self.gradient_checkpointing == "offload":
-            LOG.warning(
-                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
-            )
-            self.gradient_checkpointing = True
-            self.activation_offloading = True
-        return self
-
-    @model_validator(mode="after")
-    def check_activation_offloading_wo_gc(self):
-        if (
-            self.activation_offloading == "hidden_states"
-            and not self.gradient_checkpointing
-        ):
-            raise ValueError(
-                "activation_offloading: hidden_states requires gradient_checkpointing"
-            )
-        if self.activation_offloading is not True:
+    def check_offload_all_without_recompute(self):
+        checkpointing = self.activation_checkpointing
+        if checkpointing.enabled or checkpointing.offload.all == "none":
             return self
-        if self.gradient_checkpointing:
-            # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
-            if not is_deepspeed_zero3_config(self.deepspeed):
-                gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-                gc_kwargs.setdefault("use_reentrant", False)
-                self.gradient_checkpointing_kwargs = gc_kwargs
-        elif self.process_reward_model or self.rl in (
+        if self.process_reward_model or self.rl in (
             RLType.ORPO,
             RLType.SIMPO,
             RLType.EBFT,
@@ -2265,37 +2288,35 @@ class ModelCompatibilityValidationMixin:
                 else f"rl: {self.rl.value}"
             )
             raise ValueError(
-                f"activation_offloading: {self.activation_offloading} without "
-                f"gradient_checkpointing is not supported for {trainer}; set "
-                "gradient_checkpointing: true"
+                "activation_checkpointing.offload.all without recompute is not "
+                f"supported for {trainer}; set activation_checkpointing.enabled: true"
             )
-        else:
-            LOG.warning(
-                f"activation_offloading: {self.activation_offloading} without "
-                "gradient_checkpointing offloads every activation with no recompute, "
-                "which is bound by host RAM and PCIe bandwidth; set "
-                "gradient_checkpointing: true to recompute the layers and offload only "
-                "what is saved outside them."
+        LOG.warning(
+            "activation_checkpointing.offload.all with enabled: false offloads every "
+            "activation with no recompute, which is bound by host RAM and PCIe "
+            "bandwidth; set activation_checkpointing.enabled: true to recompute the "
+            "layers and offload only what is saved outside them."
+        )
+        return self
+
+    @model_validator(mode="after")
+    def check_fsdp_activation_checkpointing(self):
+        checkpointing = self.activation_checkpointing
+        if (
+            checkpointing.enabled
+            and checkpointing.implementation == "fsdp"
+            and not self.fsdp_config
+        ):
+            raise ValueError(
+                "`activation_checkpointing.implementation: fsdp` requires `fsdp_config`."
             )
         return self
 
     @model_validator(mode="after")
     def check_selective_checkpointing(self):
-        if not self.selective_checkpointing:
-            self.selective_checkpointing = None
+        sac = self.activation_checkpointing.selective
+        if sac is None:
             return self
-        if self.selective_checkpointing is True:
-            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
-
-            self.selective_checkpointing = SelectiveCheckpointingConfig()
-        if not self.gradient_checkpointing:
-            raise ValueError("selective_checkpointing requires gradient_checkpointing")
-        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
-            raise ValueError(
-                "selective_checkpointing requires non-reentrant checkpointing "
-                "(gradient_checkpointing_kwargs.use_reentrant: false)"
-            )
-        sac = self.selective_checkpointing
         fused_lora = any(
             _lora_kernel_enabled(self, flag)
             for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
@@ -2309,8 +2330,9 @@ class ModelCompatibilityValidationMixin:
             ]
             if bad:
                 raise ValueError(
-                    f"selective_checkpointing.save entries {bad} match matmul ops, "
-                    "which cannot be saved while a fused LoRA kernel is enabled: the "
+                    f"activation_checkpointing.selective.save entries {bad} match "
+                    "matmul ops, which cannot be saved while a fused LoRA kernel is "
+                    "enabled: the "
                     "kernel adds the adapter delta into the base matmul output "
                     "in-place (addmm_), which invalidates the cached tensor. Set "
                     "lora_mlp_kernel: false, lora_qkv_kernel: false and "
@@ -2319,8 +2341,8 @@ class ModelCompatibilityValidationMixin:
                 )
             if sac.save_matmul_min_k:
                 raise ValueError(
-                    "selective_checkpointing.save_matmul_min_k saves the base matmul "
-                    "that a fused LoRA kernel then mutates in-place (addmm_). Set "
+                    "activation_checkpointing.selective.save_matmul_min_k saves the base "
+                    "matmul that a fused LoRA kernel then mutates in-place (addmm_). Set "
                     "lora_mlp_kernel: false, lora_qkv_kernel: false and "
                     "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
                     "or drop save_matmul_min_k."
@@ -2336,16 +2358,16 @@ class ModelCompatibilityValidationMixin:
             for entry in sac.save_modules or []:
                 if any(_sac_entry_covers(entry, module) for module in modules):
                     raise ValueError(
-                        f"selective_checkpointing.save_modules entry {entry!r} names "
-                        f"a module whose forward is replaced by {flag}: true, so its "
+                        f"activation_checkpointing.selective.save_modules entry {entry!r} "
+                        f"names a module whose forward is replaced by {flag}: true, so its "
                         "hooks never fire and the rule would be a silent no-op. Set "
                         f"{flag}: false (LoRA kernels are auto-enabled for "
                         "LoRA/QLoRA) or remove the entry."
                     )
                 if flag.startswith("lora_") and _sac_entry_is_layer_container(entry):
                     raise ValueError(
-                        f"selective_checkpointing.save_modules entry {entry!r} scopes "
-                        "a decoder layer or model container, which holds the "
+                        f"activation_checkpointing.selective.save_modules entry {entry!r} "
+                        "scopes a decoder layer or model container, which holds the "
                         f"projections {flag}: true runs; the kernel adds the adapter "
                         "delta into their saved base matmul output in-place "
                         f"(addmm_), which invalidates the cached tensor. Set {flag}: "
@@ -2354,8 +2376,8 @@ class ModelCompatibilityValidationMixin:
                     )
         if self.torch_compile:
             LOG.warning(
-                "selective_checkpointing with torch_compile is untested in axolotl; "
-                "the SAC context_fn targets the eager checkpointing path"
+                "activation_checkpointing.selective with torch_compile is untested in "
+                "axolotl; the SAC context_fn targets the eager checkpointing path"
             )
         return self
 
@@ -2368,14 +2390,14 @@ class ModelCompatibilityValidationMixin:
         return backend
 
     @model_validator(mode="after")
-    def check_torch_compile_regional_with_gradient_checkpointing(self):
+    def check_torch_compile_regional_with_activation_checkpointing(self):
         if (
             self.torch_compile
             and self.torch_compile_regional
-            and self.gradient_checkpointing
+            and _hf_checkpointing(self.activation_checkpointing)
         ):
             raise ValueError(
-                "torch_compile_regional cannot be combined with gradient_checkpointing: "
+                "torch_compile_regional cannot be combined with activation_checkpointing: "
                 "the checkpoint recompute can run a different Dynamo cache entry than "
                 "the forward (pytorch/pytorch#166926). Use whole-model compile."
             )
@@ -2388,12 +2410,11 @@ class ModelCompatibilityValidationMixin:
         if self._resolved_expert_parallel_backend() != "torch":
             return self
         # recompute has to replay the forward's routing through a SAC policy
-        if self.gradient_checkpointing and (
-            self.gradient_checkpointing_kwargs or {}
-        ).get("use_reentrant"):
+        checkpointing = self.activation_checkpointing
+        if checkpointing.enabled and checkpointing.reentrant:
             raise ValueError(
-                "expert_parallel_backend: torch requires non-reentrant gradient "
-                "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
+                "expert_parallel_backend: torch requires non-reentrant activation "
+                "checkpointing (activation_checkpointing.reentrant: false): "
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
@@ -2406,27 +2427,6 @@ class ModelCompatibilityValidationMixin:
             raise ValueError(
                 "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
                 "torch (DeepEP dispatches the whole batch in one fused kernel)"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def check_hidden_states_offloading(self):
-        if self.activation_offloading != "hidden_states":
-            return self
-        gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-        use_reentrant = gc_kwargs.setdefault("use_reentrant", False)
-        self.gradient_checkpointing_kwargs = gc_kwargs
-        if use_reentrant and self.unfrozen_parameters:
-            raise ValueError(
-                "activation_offloading: hidden_states with reentrant checkpointing "
-                "is incompatible with `unfrozen_parameters` (partially frozen model)."
-            )
-        if self.adapter:
-            LOG.warning(
-                "activation_offloading: hidden_states uses gradient checkpointing; "
-                "with LoRA/QLoRA, activation_offloading: true with "
-                "gradient_checkpointing: false can be faster because it avoids "
-                "recompute while offloading smaller adapter activations."
             )
         return self
 
@@ -2636,9 +2636,9 @@ class ComplexValidationMixin:
             )
         return self
 
-    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+    def hint_activation_checkpointing_dpo_lora_ddp(self):
         if (
-            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            self.activation_checkpointing.enabled
             and self.capabilities
             and self.capabilities.get("n_gpu", 1) > 1
             and self.adapter in ("lora", "qlora")
@@ -2647,7 +2647,7 @@ class ComplexValidationMixin:
             and not self.deepspeed
         ):
             LOG.warning(
-                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+                "activation_checkpointing with DPO + DDP + LoRA is not recommended."
             )
         return self
 
@@ -2749,7 +2749,7 @@ class EBFTValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_ebft_torch_compile(cls, data):
-        """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
+        """torch_compile + flex_attention + activation_checkpointing causes dynamo recompiles
         and CheckpointErrors. The flex_attention kernel compiles itself internally —
         whole-model torch.compile is not needed and actively harmful."""
         if (
@@ -2757,9 +2757,9 @@ class EBFTValidationMixin:
             and data.get("torch_compile") is True
             and (data.get("ebft") or {}).get("mode") == "strided"
         ):
-            if data.get("gradient_checkpointing"):
+            if _hf_checkpointing(_raw_checkpointing(data)):
                 raise ValueError(
-                    "EBFT strided mode: `torch_compile: true` with `gradient_checkpointing: true` "
+                    "EBFT strided mode: `torch_compile: true` with `activation_checkpointing` "
                     "causes CheckpointError (BlockMask metadata mismatch during recomputation). "
                     "Remove `torch_compile` — the flex_attention kernel compiles itself internally."
                 )
@@ -2771,45 +2771,43 @@ class EBFTValidationMixin:
         return data
 
     @model_validator(mode="after")
-    def check_ebft_gradient_checkpointing_reentrant(self):
-        """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
+    def check_ebft_activation_checkpointing_reentrant(self):
+        """flex_attention + non-reentrant activation checkpointing causes CheckpointError."""
+        checkpointing = self.activation_checkpointing
         if (
             self.rl == "ebft"
             and self.ebft is not None
             and self.ebft.mode == "strided"
             and self.attn_implementation == "flex_attention"
-            and self.gradient_checkpointing
+            and _hf_checkpointing(checkpointing)
+            and checkpointing.reentrant is not True
         ):
-            gc_kwargs = self.gradient_checkpointing_kwargs or {}
-            if not gc_kwargs.get("use_reentrant"):
-                LOG.warning(
-                    "EBFT strided mode with flex_attention: setting `use_reentrant: true` in "
-                    "gradient_checkpointing_kwargs (required for flex_attention compatibility). "
-                    "Non-reentrant checkpointing causes CheckpointError with BlockMask metadata."
-                )
-                if self.gradient_checkpointing_kwargs is None:
-                    self.gradient_checkpointing_kwargs = {}
-                self.gradient_checkpointing_kwargs["use_reentrant"] = True
+            LOG.warning(
+                "EBFT strided mode with flex_attention: setting "
+                "`activation_checkpointing.reentrant: true` (required for "
+                "flex_attention compatibility). Non-reentrant checkpointing causes "
+                "CheckpointError with BlockMask metadata."
+            )
+            checkpointing.reentrant = True
         return self
 
     @model_validator(mode="after")
     def check_ebft_activation_offloading(self):
-        """activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
-        which conflicts with flex_attention's use_reentrant requirement."""
+        """TRL's offloader wraps the layers in a way that conflicts with
+        flex_attention's use_reentrant requirement."""
         if (
             self.rl == "ebft"
             and self.ebft is not None
             and self.ebft.mode == "strided"
-            and self.activation_offloading is True
+            and self.activation_checkpointing.offload.all != "none"
             and self.attn_implementation == "flex_attention"
         ):
             raise ValueError(
-                "EBFT strided mode: `activation_offloading: true` is incompatible with "
-                "`attn_implementation: flex_attention`. Activation offloading replaces "
-                "gradient checkpointing with FSDP-style wrapping that conflicts with "
-                "flex_attention's reentrant checkpoint requirement. Remove "
-                "`activation_offloading` — the strided trainer uses micro-batched forward "
-                "passes for memory efficiency instead."
+                "EBFT strided mode: `activation_checkpointing.offload.all` is "
+                "incompatible with `attn_implementation: flex_attention`. TRL's "
+                "activation offloader conflicts with flex_attention's reentrant "
+                "checkpoint requirement. Remove it — the strided trainer uses "
+                "micro-batched forward passes for memory efficiency instead."
             )
         return self
 
@@ -2851,8 +2849,70 @@ class EBFTValidationMixin:
         return data
 
 
+def _truncates_without_top_k(trl) -> bool:
+    """Whether top-p or min-p sampling is set without top-k, as TRL's configs check."""
+    truncates = (trl.top_p is not None and trl.top_p < 1.0) or (trl.min_p or 0.0) > 0.0
+    return truncates and not trl.top_k
+
+
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_vllm_sync_interval(cls, data):
+        trl = data.get("trl") or {}
+        legacy = trl.get("vllm_sync_interval")
+        if legacy is None:
+            return data
+        current = trl.get("weight_sync_steps")
+        if current is not None and current != legacy:
+            raise ValueError(
+                f"`trl.vllm_sync_interval: {legacy}` conflicts with "
+                f"`trl.weight_sync_steps: {current}`; set only `weight_sync_steps`"
+            )
+        LOG.warning(
+            "`trl.vllm_sync_interval` is deprecated, use `trl.weight_sync_steps`"
+        )
+        trl["weight_sync_steps"] = legacy
+        trl["vllm_sync_interval"] = None
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_data_producer_options(cls, data):
+        """Reject the removed data producer trainer's options, map its alias."""
+        trl = data.get("trl") or {}
+        problems = [
+            f"`trl.{name}`: {replacement}"
+            for name, replacement in DATA_PRODUCER_REMOVED_OPTIONS.items()
+            if trl.get(name) is not None
+        ]
+        if data.get("rl") in ("grpo", "gdpo") and data.get("batch_flattening") is True:
+            problems.append(
+                "`batch_flattening`: `trl.token_budget`, async GRPO packs rollouts by "
+                "token budget"
+            )
+        if problems:
+            raise ValueError(
+                "The data producer trainer has been removed, and with it:\n- "
+                + "\n- ".join(problems)
+                + f"\nSee {DATA_PRODUCER_MIGRATION_DOCS} for the migration guide."
+            )
+        if trl.get("use_data_producer"):
+            LOG.warning(
+                "`trl.use_data_producer` is deprecated: the data producer trainer has "
+                "been removed. It now selects async GRPO (`trl.async_prefetch: true`) "
+                "with `trl.max_staleness: 0`, which discards the rollouts in flight at "
+                "every weight sync; `trl.async_prefetch: true` with the default "
+                f"`max_staleness` is faster. See {DATA_PRODUCER_MIGRATION_DOCS}."
+            )
+            if not trl.get("async_prefetch"):
+                trl["async_prefetch"] = True
+                if trl.get("max_staleness") is None:
+                    trl["max_staleness"] = 0
+            trl["use_data_producer"] = False
+        return data
 
     @model_validator(mode="after")
     def check_vllm_mode_set(self):
@@ -2879,17 +2939,243 @@ class GRPOVllmValidationMixin:
                 "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
                 "weights are merged and loaded into the colocated engine directly."
             )
-        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
-            raise ValueError(
-                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
-                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
-                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
-            )
         if not (self.vllm and self.vllm.max_model_len):
             LOG.warning(
                 "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
                 "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
                 "full context and may fail to start on the shared GPU."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_grpo_sampling_needs_top_k(self):
+        """TRL's synchronous GRPOConfig refuses top-p/min-p sampling without top_k
+        under vLLM importance sampling, which it renormalizes over vLLM's candidate
+        sets (async GRPO is checked in `check_async_grpo_compat`)."""
+        trl = self.trl
+        ebft = getattr(self, "ebft", None)
+        structured_ebft = self.rl == "ebft" and getattr(ebft, "mode", None) != "strided"
+        if (
+            (self.rl in ("grpo", "gdpo") or structured_ebft)
+            and trl
+            and not trl.async_prefetch
+            and trl.use_vllm
+            and trl.vllm_importance_sampling_correction is not False
+            and _truncates_without_top_k(trl)
+        ):
+            raise ValueError(
+                "GRPO with vLLM importance sampling needs `trl.top_k > 0` (e.g. "
+                "`top_k: 512`) when `trl.top_p < 1` or `trl.min_p > 0`: the "
+                "importance ratios renormalize the policy's log-probs over the "
+                "candidate set vLLM sampled each token from, which vLLM bounds with "
+                "`top_k`. Alternatively, set "
+                "`trl.vllm_importance_sampling_correction: false`."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_async_grpo_compat(self):
+        """`async_prefetch` with rl: grpo/gdpo, or structured EBFT, runs on TRL's
+        AsyncGRPOTrainer."""
+        trl = self.trl
+        ebft = getattr(self, "ebft", None)
+        structured_ebft = self.rl == "ebft" and getattr(ebft, "mode", None) != "strided"
+        if not (self.rl in ("grpo", "gdpo") or structured_ebft) or not (
+            trl and trl.async_prefetch
+        ):
+            return self
+
+        problems = []
+        if not trl.use_vllm:
+            problems.append(
+                "set `trl.use_vllm: true`; generation runs on a vLLM server"
+            )
+        if trl.vllm_mode == "colocate":
+            problems.append("`trl.vllm_mode: colocate` is not supported; use `server`")
+        if self.deepspeed:
+            problems.append("DeepSpeed is not supported; use FSDP2 or DDP")
+        if (self.context_parallel_size or 1) > 1:
+            problems.append("`context_parallel_size > 1` is not supported")
+        if trl.beta or self.rl_beta:
+            problems.append("there is no reference model, so `beta` must be 0")
+        if trl.sync_ref_model:
+            problems.append("there is no reference model to sync")
+        is_options = [
+            f"`{option}`"
+            for option in (
+                "vllm_importance_sampling_correction",
+                "vllm_importance_sampling_mode",
+                "vllm_importance_sampling_cap",
+            )
+            if getattr(trl, option) is not None
+        ]
+        # Score centering needs the sampler's top log-probs, which only TRL's own
+        # rollout loop requests; EBFT and NeMo Gym multi-turn default to dapo.
+        own_loop = structured_ebft or getattr(self, "nemo_gym_multi_turn", None)
+        default_loss = "dapo" if own_loop else "score_centering"
+        loss_type = trl.loss_type or default_loss
+        named = f"`loss_type: {loss_type}`" + (
+            " (the default)" if trl.loss_type is None else ""
+        )
+        if loss_type == "dapo":
+            if is_options:
+                problems.append(
+                    f"{named}, TRL's clipped objective, clips the policy/sampler "
+                    "ratio at `epsilon` / `epsilon_high` and ignores "
+                    f"{', '.join(is_options)}; to weight tokens by the capped ratio "
+                    "instead, set `loss_type: cispo`"
+                )
+        elif loss_type == "cispo":
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options:
+                problems.append(
+                    "`loss_type: cispo` clips nothing and ignores "
+                    f"{', '.join(eps_options)}; async GRPO's cispo caps the "
+                    "policy/sampler weight with `vllm_importance_sampling_cap` "
+                    "(synchronous GRPO's caps with `epsilon_high`)"
+                )
+            if trl.vllm_importance_sampling_correction is False:
+                problems.append(
+                    "`loss_type: cispo` is the sampler-ratio-weighted loss, so it "
+                    "cannot run with `vllm_importance_sampling_correction: false`; "
+                    "use `loss_type: dapo` for TRL's clipped objective"
+                )
+            if trl.vllm_importance_sampling_mode in (
+                "sequence_truncate",
+                "sequence_mask",
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_mode` must be `token_truncate` or "
+                    "`token_mask`"
+                )
+            if (
+                trl.vllm_importance_sampling_cap is not None
+                and trl.vllm_importance_sampling_cap <= 1.0
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_cap` must exceed 1, or it would "
+                    "down-weight or drop every token the sampler agrees with"
+                )
+        elif loss_type == "score_centering":
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options or is_options:
+                problems.append(
+                    f"{named} ignores {', '.join(eps_options + is_options)}; it "
+                    "drops the tokens whose policy/sampler ratio falls outside "
+                    "`vllm_importance_sampling_clip_min` / "
+                    "`vllm_importance_sampling_clip_max`. Set `loss_type: dapo` for "
+                    "the clipped objective, or `cispo` for capped importance weights"
+                )
+            if own_loop:
+                problems.append(
+                    "`loss_type: score_centering` centers over the vLLM sampler's top "
+                    "log-probs, which only TRL's own rollout loop requests; EBFT and "
+                    "NeMo Gym multi-turn rollouts run their own"
+                )
+        else:
+            problems.append(
+                "`loss_type` must be `score_centering` (TRL's score centering, the "
+                "default), `dapo` (TRL's clipped objective, the default for EBFT and "
+                "NeMo Gym multi-turn), or `cispo` (policy gradient weighted by the "
+                "capped policy/sampler ratio)"
+            )
+        if trl.importance_sampling_level not in (None, "token"):
+            problems.append("only `importance_sampling_level: token` is supported")
+        if trl.num_iterations not in (None, 1):
+            problems.append(
+                "each rollout is trained on once; `num_iterations` must be 1"
+            )
+        if trl.scale_rewards == "batch":
+            problems.append(
+                "`scale_rewards: batch` is not supported: groups are scored as they "
+                "finish, so use `group` or `none`"
+            )
+        if loss_type != "score_centering":
+            if (
+                trl.vllm_importance_sampling_clip_min is not None
+                or trl.vllm_importance_sampling_clip_max is not None
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_clip_min/max` bound "
+                    "`loss_type: score_centering` only; with `loss_type: cispo`, use "
+                    "`vllm_importance_sampling_cap`"
+                )
+            if trl.num_sampler_logprobs is not None:
+                problems.append(
+                    "`num_sampler_logprobs` is for `loss_type: score_centering` only"
+                )
+        if trl.use_liger_loss:
+            problems.append("`use_liger_loss` is not supported")
+        if trl.entropy_coef or trl.use_adaptive_entropy:
+            problems.append("entropy regularization is not supported")
+        if trl.rollout_func:
+            problems.append("`rollout_func` is not supported")
+        unsent = [
+            f"`{option}`"
+            for option in ("generation_kwargs", "vllm_guided_decoding_regex")
+            if getattr(trl, option)
+            and not (structured_ebft and option == "generation_kwargs")
+        ]
+        if unsent:
+            problems.append(
+                f"{', '.join(unsent)} not supported: TRL's rollout worker sends only "
+                "its own sampling parameters to vLLM"
+            )
+        if (self.load_in_4bit or self.load_in_8bit) and not trl.vllm_lora_sync:
+            problems.append(
+                "a quantized base model needs adapter-only weight sync: set "
+                "`trl.vllm_lora_sync: true`"
+            )
+        for option in ("off_policy_mask_threshold", "use_bias_correction_kl"):
+            if getattr(trl, option) is not None:
+                problems.append(
+                    f"`trl.{option}` applies to synchronous GRPO only; remove it"
+                )
+        if _truncates_without_top_k(trl):
+            problems.append(
+                "`top_p < 1` or `min_p > 0` needs `top_k > 0` (e.g. `top_k: 512`): "
+                "the trainer renormalizes the policy's log-probs over the candidate "
+                "set vLLM sampled each token from, and vLLM bounds that set with "
+                "`top_k`"
+            )
+        if problems:
+            raise ValueError(
+                f"`trl.async_prefetch` with rl: {getattr(self.rl, 'value', self.rl)} "
+                "runs on TRL's AsyncGRPOTrainer:\n- " + "\n- ".join(problems)
+            )
+
+        if not self.max_steps and self.lr_scheduler not in (None, "constant"):
+            LOG.warning(
+                "Async GRPO without `max_steps` stops after num_epochs passes over the "
+                "prompts and sets max_steps to a loose upper bound, so "
+                f"`lr_scheduler: {self.lr_scheduler}` will barely decay. Set `max_steps`, "
+                "or use `lr_scheduler: constant`."
+            )
+
+        # TRL's AsyncGRPOConfig defaults: max_staleness 4, weight_sync_steps 1
+        staleness = 4 if trl.max_staleness is None else trl.max_staleness
+        sync_interval = trl.weight_sync_steps or 1
+        if (
+            self.adapter in ("lora", "qlora")
+            and loss_type == "dapo"
+            and staleness * sync_interval > 2
+        ):
+            LOG.warning(
+                f"Async GRPO with a LoRA adapter trains on rollouts up to "
+                f"{staleness * sync_interval} optimizer steps old (`max_staleness: "
+                f"{staleness}`, `weight_sync_steps: {sync_interval}`). "
+                f"{named} drops the gradient of tokens whose "
+                "probability moved past `epsilon` since sampling, and in 200-step "
+                "LoRA runs it stopped ending completions; `trl.loss_type: cispo` is "
+                "recommended. See docs/grpo.qmd#async-loss."
             )
         return self
 

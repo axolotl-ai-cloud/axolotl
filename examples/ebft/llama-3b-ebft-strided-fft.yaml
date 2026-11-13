@@ -48,9 +48,9 @@ lora_target_linear: true
 
 bf16: auto
 torch_dtype: bfloat16
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true
+activation_checkpointing:
+  enabled: true
+  reentrant: true
 ddp: false
 device_map:
   "": 0

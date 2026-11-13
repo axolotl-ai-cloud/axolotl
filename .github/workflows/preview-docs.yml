@@ -28,11 +28,9 @@ jobs:
   preview:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
-      - name: cleanup node
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,22 +39,52 @@ jobs:
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
+        with:
+          version: '1.11.9'
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: |
+            docs/requirements.txt
+            .github/workflows/preview-docs.yml
+
+      - name: Install docs dependencies
         run: |
-          python3 -m pip install jupyter quartodoc
-          python3 -m pip install -e .
+          uv pip install --system 'torch>=2.13.0,<2.16.0' --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system -r docs/requirements.txt
 
       - name: Build autodoc
-        run: quartodoc build
+        id: autodoc
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/autodoc"
+          quartodoc build 2>&1 | tee "$RUNNER_TEMP/autodoc/quartodoc-build.log"
+
+      # griffe docstring warnings don't fail the build; surface them on the PR instead.
+      # Both steps also report a failed build: once the build step ran, tee created the log.
+      - name: Annotate docstring warnings
+        if: ${{ !cancelled() && steps.autodoc.outcome != 'skipped' }}
+        run: python3 docs/scripts/annotate_autodoc_warnings.py "$RUNNER_TEMP/autodoc/quartodoc-build.log"
+
+      - name: Upload autodoc log
+        if: ${{ !cancelled() && steps.autodoc.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: autodoc-log
+          path: ${{ runner.temp }}/autodoc/quartodoc-build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Quarto render
-        run: quarto render
+        run: python3 docs/scripts/render_docs.py --jobs 4
 
       # everything above runs credential-free on every PR (including forks) so
       # a broken docs build fails CI; publishing needs the Netlify secrets,

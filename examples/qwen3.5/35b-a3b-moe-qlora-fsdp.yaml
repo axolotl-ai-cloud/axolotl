@@ -59,9 +59,9 @@ lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2
@@ -80,4 +80,3 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true

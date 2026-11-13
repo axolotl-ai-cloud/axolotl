@@ -17,9 +17,10 @@ class TinyCheckpointLayer(GradientCheckpointingLayer):
         return hidden_states * hidden_states
 
 
-@pytest.mark.gpu
-def test_checkpoint_offload_marks_non_reentrant_checkpoint_input():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_checkpoint_offload_marks_non_reentrant_checkpoint_input(device):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA required")
     layer = TinyCheckpointLayer()
     layer.gradient_checkpointing = True
     layer._gradient_checkpointing_func = partial(checkpoint, use_reentrant=False)

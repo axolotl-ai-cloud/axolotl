@@ -12,7 +12,10 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
 DEV = "cuda"
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA"),
+]
 
 
 def _marlin_ok():

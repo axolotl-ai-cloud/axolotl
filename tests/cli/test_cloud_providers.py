@@ -433,15 +433,31 @@ else:
 
 
 @pytest.mark.parametrize("config", [{}, {"gpu": None}, {"gpu": ""}, {"gpu": "L40S"}])
-def test_modal_default_gpu(config, monkeypatch):
+def test_modal_default_gpu(config):
     pytest.importorskip("modal")
     from axolotl.integrations.modal import cloud as modal_cloud
 
-    gpu = MagicMock()
-    monkeypatch.setattr(modal_cloud.modal.gpu, "L40S", gpu)
     provider = modal_cloud.ModalCloud(config, app=MagicMock())
-    assert provider.get_train_gpu() is gpu.return_value
-    gpu.assert_called_once_with(count=1)
+    assert provider.get_train_gpu() == "L40S:1"
+
+
+@pytest.mark.parametrize(
+    ("family", "gpu"),
+    [
+        ("a100", "A100-40GB:2"),
+        ("A100-80GB", "A100-80GB:2"),
+        ("a10", "A10G:2"),
+        ("h100", "H100:2"),
+        ("t4", "T4:2"),
+        ("l4", "L4:2"),
+    ],
+)
+def test_modal_gpu_spec(family, gpu):
+    pytest.importorskip("modal")
+    from axolotl.integrations.modal import cloud as modal_cloud
+
+    provider = modal_cloud.ModalCloud({"gpu": family, "gpu_count": 2}, app=MagicMock())
+    assert provider.get_train_gpu() == gpu
 
 
 def test_baseten_rejects_overrides_before_submission(monkeypatch):

@@ -62,6 +62,19 @@ An assistant message's `reasoning_content` is rendered as a `[THINK]...[/THINK]`
 ]}
 ```
 
+## Fused Attention LoRA
+
+With the kernels plugin enabled (`axolotl.integrations.kernels.KernelsPlugin`, `use_kernels: true`), LoRA on the MLA attention projections (`q_proj`, `kv_a_proj_with_mqa`, `kv_b_proj`, `o_proj`) runs a fused kernel that dispatches on the base weight's format.
+
+- `mistral_large4_attn_lora_kernel`: on by default for `adapter: lora` on a block-FP8 or bf16 checkpoint; off by default on the NVFP4 checkpoint and when `activation_checkpointing.selective` saves matmul outputs. Set `true` or `false` to override.
+- `mistral_large4_attn_native_fp8`: on by default. On an FP8 base, `q_proj`, `kv_b_proj` and `o_proj` run the native block-FP8 GEMM instead of a dequantized one.
+- `mistral_large4_attn_quantization`: `none` (default), `nvfp4`, `mxfp4` or `mxfp8`. Quantizes the frozen attention bases after the LoRA wrap to save memory. Needs the fused kernel on, and does not combine with `peft_use_dora`, `load_in_8bit`, `load_in_4bit` or `lora_merge_aware`.
+
+```yaml
+mistral_large4_attn_lora_kernel: true
+mistral_large4_attn_quantization: mxfp8
+```
+
 ## Tips
 
 - Only `sdpa` and `eager` attention are supported.

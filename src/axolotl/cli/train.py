@@ -1,6 +1,7 @@
 """CLI to run training on a model."""
 
 import gc
+import json
 import os
 from pathlib import Path
 from typing import Any, Union
@@ -10,6 +11,9 @@ import fire
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.utils import make_lazy_getattr
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 _LAZY_IMPORTS = {
     "Accelerator": "accelerate",
@@ -85,7 +89,30 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         gc.collect()
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+def build_ray_runtime_env(cfg: DictDefault) -> dict | None:
+    """Plugin env vars Ray workers need before TorchTrainer creates the process group."""
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
+
+    if not (cfg.get("plugins") or get_builtin_plugins()):
+        return None
+    env = PluginManager.get_instance().get_distributed_env(cfg)
+    # a submitted Ray job's runtime_env already reaches the workers, and ray.init rejects
+    # env var keys that overlap with it
+    job_env_vars = (
+        json.loads(os.environ.get("RAY_JOB_CONFIG_JSON_ENV_VAR", "{}"))
+        .get("runtime_env", {})
+        .get("env_vars", {})
+    )
+    # forward the driver's effective value so user-set variables still win on workers
+    env_vars = {
+        key: os.environ.get(key, value)
+        for key, value in env.items()
+        if key not in job_env_vars
+    }
+    return {"env_vars": env_vars} if env_vars else None
+
+
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_train`.
 
@@ -113,6 +140,21 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     if parsed_cfg.use_ray:
         from ray.train import RunConfig, ScalingConfig
         from ray.train.torch import TorchConfig, TorchTrainer
+
+        runtime_env = build_ray_runtime_env(parsed_cfg)
+        if runtime_env:
+            import ray
+
+            if ray.is_initialized():
+                LOG.warning(
+                    "Ray is already initialized; plugin distributed environment "
+                    "variables %s are not forwarded to the workers. Pass them in the "
+                    "job's runtime_env instead.",
+                    sorted(runtime_env["env_vars"]),
+                )
+            else:
+                # workers inherit the job runtime_env; TorchTrainer has no per-run one
+                ray.init(runtime_env=runtime_env)
 
         train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
         trainer = TorchTrainer(

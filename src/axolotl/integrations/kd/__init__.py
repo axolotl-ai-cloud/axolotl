@@ -53,9 +53,11 @@ class KDPlugin(BasePlugin):
             "kd_normalize_topk": cfg.kd_normalize_topk,
         }
 
-    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+    def get_collator_cls_and_kwargs(
+        self, cfg, is_eval=False
+    ) -> tuple[type, dict] | None:
         if not cfg.kd_trainer:
-            return None, None
+            return None
 
         from .collator import DataCollatorForKD, KDBatchSamplerDataCollatorForSeq2Seq
 
@@ -90,7 +92,7 @@ class KDPlugin(BasePlugin):
             trainer (Trainer): Huggingface Trainer instance.
 
         Returns:
-            list: List containing the configured callback instances.
+            The configured callback instances.
         """
         if cfg.kd_temperature_min is not None and cfg.kd_online_server_base_url:
             callback = KDTemperatureSchedulerCallback(

@@ -15,11 +15,13 @@ is checked on the LAST experts.
 import pytest
 import torch
 
+from tests.cuda_gates import AtSetup
+
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
     pytest.mark.skipif(
         torch.cuda.is_available()
-        and torch.cuda.get_device_properties(0).total_memory < 24e9,
+        and AtSetup(lambda: torch.cuda.get_device_properties(0).total_memory < 24e9),
         reason="needs ~16GB free VRAM",
     ),
 ]

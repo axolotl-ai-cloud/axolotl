@@ -28,6 +28,8 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.peft import LoraConfig
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 
 @pytest.mark.parametrize("threads", [None, 1, 4])
 @pytest.mark.parametrize("fails", [False, True])
@@ -4021,7 +4023,7 @@ class TestPrequantizedBnbBaseMerge:
 
     @pytest.mark.slow
     @pytest.mark.gpu
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a GPU")
+    @pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
     def test_merge_cli_on_prequantized_hub_base(self, tmp_path):
         """Train one step on a real prequantized base, then ``axolotl merge-lora`` and run it."""
         from transformers import AutoModelForCausalLM
@@ -4074,8 +4076,10 @@ class TestPrequantizedBnbBaseMerge:
         assert all(t.dtype == torch.bfloat16 for t in merged.values())
         model = AutoModelForCausalLM.from_pretrained(
             merged_dir, dtype=torch.bfloat16
-        ).cuda()
-        logits = model(input_ids=torch.tensor([[1, 2, 3, 4]], device="cuda")).logits
+        ).to(DEVICE_TYPE)
+        logits = model(
+            input_ids=torch.tensor([[1, 2, 3, 4]], device=DEVICE_TYPE)
+        ).logits
         assert torch.isfinite(logits).all()
 
 

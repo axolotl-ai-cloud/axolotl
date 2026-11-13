@@ -235,7 +235,7 @@ class HFMistralTokenizer(MistralCommonBackend):
                 The specific model version to use. It can be a branch name, a tag name, or a commit id, since we use a
                 git-based system for storing models and other artifacts on huggingface.co, so `revision` can be any
                 identifier allowed by git.
-            max_length (`int`, *optional*):
+            model_max_length (`int`, *optional*):
                 Controls the maximum length to use by one of the truncation/padding parameters.
 
                 If left unset or set to `None`, this will use the predefined model maximum length if a maximum length

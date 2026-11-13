@@ -79,13 +79,21 @@ quartodoc:
         - core.trainers.ebft.rewards
         - core.trainers.ebft.strided
         - core.trainers.ebft.trainer
+        - core.trainers.ebft.async_rollout
+        - core.trainers.ebft.async_trainer
         - core.trainers.grpo
         - core.trainers.grpo.args
         - core.trainers.grpo.trainer
-        - core.trainers.grpo.async_trainer
-        - core.trainers.grpo.fast_async_trainer
-        - core.trainers.grpo.replay_buffer
         - core.trainers.grpo.sampler
+        - core.trainers.async_grpo
+        - core.trainers.async_grpo.config
+        - core.trainers.async_grpo.trainer
+        - core.trainers.async_grpo.loss
+        - core.trainers.async_grpo.weight_sync
+        - core.trainers.async_grpo.progress
+        - core.trainers.async_grpo.rollout
+        - core.trainers.async_grpo.scoring
+        - core.trainers.async_grpo.traces
         - core.trainers.utils
     - title: Model Loading
       desc: Functionality for loading and patching models, tokenizers, etc.
@@ -104,6 +112,7 @@ quartodoc:
         - core.trainers.mixins.checkpoints
         - core.trainers.mixins.distributed_parallel
         - core.trainers.mixins.layer_offloading
+        - core.trainers.mixins.lora_merge_check
         - core.trainers.mixins.optimizer
         - core.trainers.mixins.packing
         - core.trainers.mixins.rng_state_loader
@@ -259,6 +268,7 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.optimizers.qgalore
         - utils.data.streaming
+        - utils.data.packing
         - utils.data.sft
         - utils.data.rl
         - utils.data.lock
@@ -345,11 +355,10 @@ quartodoc:
         - integrations.mora.args
         - integrations.mora.plugin
         - integrations.nemo_gym.args
-        - integrations.nemo_gym.data_producer
         - integrations.nemo_gym.dataset
-        - integrations.nemo_gym.multi_turn
         - integrations.nemo_gym.plugin
         - integrations.nemo_gym.rewards
+        - integrations.nemo_gym.rollout
         - integrations.nemo_gym.server
         - integrations.spectrum
         - integrations.spectrum.args
@@ -512,6 +521,7 @@ website:
             - docs/hf-jobs.qmd
             - docs/nebius-serverless.qmd
             - docs/coreweave.qmd
+            - docs/runcrate.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
             - docs/tpu.qmd
@@ -552,7 +562,7 @@ website:
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
-            - docs/gradient_checkpointing.qmd
+            - docs/activation_checkpointing.qmd
             - docs/nd_parallelism.qmd
             - docs/expert_quantization.qmd
 

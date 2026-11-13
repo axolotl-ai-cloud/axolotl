@@ -7,26 +7,33 @@
 """
 NeMo Gym reward functions.
 
-Provides ready-to-use reward functions for axolotl configs::
-
-    trl:
-      reward_funcs:
-        # Multi-turn: passthrough reward from agent /run
-        - axolotl.integrations.nemo_gym.rewards.reward_env
-        # Single-turn: call /verify endpoints directly
-        - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
+The plugin scores single-turn rollouts with :class:`NemoGymVerifyReward` and
+multi-turn rollouts with the agent's own reward, so configs list neither.
+``reward_nemo_gym_verify`` remains for using ``/verify`` without the plugin.
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-import numpy as np
+import aiohttp
 import requests
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def parse_reward(value: Any, source: str) -> float | None:
+    """A NeMo Gym reward, or None (unscored) when it is missing or not a number."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        LOG.warning(f"{source} returned a non-numeric reward: {value!r}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -35,17 +42,10 @@ LOG = get_logger(__name__)
 
 
 def reward_env(completions, prompts=None, **kwargs):
-    """Passthrough: extract pre-computed reward from NeMo Gym agent /run response.
+    """Deprecated passthrough of a precomputed ``env_reward`` column.
 
-    The ``NemoGymDataProducer`` injects ``env_reward`` into each sample's
-    kwargs after the agent returns from ``/run``.  This function simply
-    forwards that value so TRL can log it alongside other reward signals.
-
-    Use this in your config when ``nemo_gym_multi_turn: true``::
-
-        trl:
-          reward_funcs:
-            - axolotl.integrations.nemo_gym.rewards.reward_env
+    Multi-turn rollouts now score the agent's ``/run`` reward themselves, and the
+    plugin drops this function from ``trl.reward_funcs``.
     """
     env_rewards = kwargs.get("env_reward")
     if env_rewards is not None:
@@ -107,17 +107,50 @@ def _get_verify_urls(head_port: int = 11000) -> dict[str, str]:
     return _verify_urls
 
 
+def verify_request(
+    extra: dict | None, prompt: str, completion: str, model_name: str
+) -> dict:
+    """The ``/verify`` body scoring ``completion`` as the response to ``prompt``."""
+    request = {k: v for k, v in (extra or {}).items() if v is not None}
+    request["responses_create_params"] = {
+        "input": [{"role": "user", "content": prompt}]
+    }
+    request["response"] = {
+        "id": "resp",
+        "created_at": 0,
+        "model": model_name,
+        "object": "response",
+        "output": [
+            {
+                "id": "msg",
+                "role": "assistant",
+                "type": "message",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": completion, "annotations": []}
+                ],
+            }
+        ],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+    }
+    return request
+
+
+def _text(messages, index: int) -> str:
+    if not messages:
+        return ""
+    return messages[index].get("content") or ""
+
+
 def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
     """Call NeMo Gym ``/verify`` endpoint for each completion (single-turn).
 
     Requires ``resources_server_ref`` and ``verify_extra`` kwargs, which the
-    NeMo Gym dataset loader injects automatically.
-
-    Use this in your config when ``nemo_gym_multi_turn: false``::
-
-        trl:
-          reward_funcs:
-            - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
+    NeMo Gym dataset loader injects automatically. Discovers the endpoints from a
+    head server on the default port; the plugin passes a configured
+    :class:`NemoGymVerifyReward` instead.
     """
     verify_urls = _get_verify_urls()
     refs = kwargs.get("resources_server_ref", [])
@@ -125,8 +158,6 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
     scores = []
 
     for i, completion in enumerate(completions):
-        text = completion[0]["content"] if completion else ""
-        prompt = prompts[i][0]["content"] if prompts and i < len(prompts) else ""
         srv_name = (
             refs[i]["name"] if i < len(refs) and isinstance(refs[i], dict) else ""
         )
@@ -136,32 +167,12 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
             scores.append(0.0)
             continue
 
-        extra = extras[i] if i < len(extras) else {}
-        req = {k: v for k, v in extra.items() if v is not None}
-        req["responses_create_params"] = {
-            "input": [{"role": "user", "content": prompt}]
-        }
-        req["response"] = {
-            "id": "resp",
-            "created_at": 0,
-            "model": "axolotl",
-            "object": "response",
-            "output": [
-                {
-                    "id": "msg",
-                    "role": "assistant",
-                    "type": "message",
-                    "status": "completed",
-                    "content": [
-                        {"type": "output_text", "text": text, "annotations": []}
-                    ],
-                }
-            ],
-            "parallel_tool_calls": True,
-            "tool_choice": "auto",
-            "tools": [],
-        }
-
+        req = verify_request(
+            extras[i] if i < len(extras) else None,
+            _text(prompts[i], 0) if prompts and i < len(prompts) else "",
+            _text(completion, 0),
+            "axolotl",
+        )
         try:
             resp = requests.post(url, json=req, timeout=30)
             reward = resp.json().get("reward", 0.0) if resp.ok else 0.0
@@ -174,101 +185,78 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
     return scores
 
 
-# ---------------------------------------------------------------------------
-# Factory used internally by the plugin
-# ---------------------------------------------------------------------------
+class NemoGymVerifyReward:
+    """Scores single-turn completions with the resource servers' ``/verify``.
 
+    An instance pickles with its endpoint map, so async GRPO can score with it in
+    its rollout process, and it verifies a group's completions concurrently. A
+    completion it cannot get a verdict for scores ``None``, which keeps it out of
+    its group's baseline.
 
-def create_nemo_gym_reward_fn(
-    global_config: dict,
-    verify_endpoints: dict[str, str],
-    model_name: str = "axolotl-model",
-    verify_timeout: int = 30,
-):
-    """Create a reward function bound to specific verify endpoints.
-
-    Used internally by ``NemoGymPlugin._wire_single_turn()`` to inject a
-    reward function that already knows the endpoint map (no discovery needed).
+    Args:
+        verify_endpoints: Resource server name to ``/verify`` URL.
+        model_name: Model name reported in the verified response.
+        timeout: Seconds per ``/verify`` request.
     """
 
-    def reward_fn(
-        completions: list[list[dict[str, str]]],
-        prompts: list[list[dict[str, str]]] | None = None,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        resources_server_refs = kwargs.get("resources_server_ref", [])
-        verify_extras = kwargs.get("verify_extra", [])
+    def __init__(
+        self,
+        verify_endpoints: dict[str, str],
+        model_name: str = "axolotl-model",
+        timeout: float = 30.0,
+    ):
+        self.__name__ = "nemo_gym"
+        self.verify_endpoints = dict(verify_endpoints)
+        self.model_name = model_name
+        self.timeout = timeout
 
-        scores = []
-        for i, completion in enumerate(completions):
-            completion_text = completion[0]["content"]
-            task_prompt = prompts[i][0]["content"] if prompts else ""
-
-            server_name = (
-                resources_server_refs[i]["name"]
-                if i < len(resources_server_refs)
-                else None
+    async def __call__(
+        self, completions, prompts=None, **kwargs: Any
+    ) -> list[float | None]:
+        refs = kwargs.get("resources_server_ref") or []
+        extras = kwargs.get("verify_extra") or []
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.timeout),
+            cookie_jar=aiohttp.DummyCookieJar(),
+        ) as session:
+            return list(
+                await asyncio.gather(
+                    *[
+                        self._verify(
+                            session,
+                            refs[i]["name"] if i < len(refs) and refs[i] else None,
+                            verify_request(
+                                extras[i] if i < len(extras) else None,
+                                _text(prompts[i], 0) if prompts else "",
+                                _text(completion, 0),
+                                self.model_name,
+                            ),
+                        )
+                        for i, completion in enumerate(completions)
+                    ]
+                )
             )
 
-            if server_name is None or server_name not in verify_endpoints:
-                LOG.warning(
-                    f"No verify endpoint for server '{server_name}', returning 0 reward"
-                )
-                scores.append(0.0)
-                continue
-
-            verify_endpoint = verify_endpoints[server_name]
-
-            verify_request = (
-                {k: v for k, v in verify_extras[i].items() if v is not None}
-                if i < len(verify_extras)
-                else {}
-            )
-            verify_request["responses_create_params"] = {
-                "input": [{"role": "user", "content": task_prompt}]
-            }
-            verify_request["response"] = {
-                "id": "resp",
-                "created_at": 0,
-                "model": model_name,
-                "object": "response",
-                "output": [
-                    {
-                        "id": "msg",
-                        "role": "assistant",
-                        "type": "message",
-                        "status": "completed",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": completion_text,
-                                "annotations": [],
-                            }
-                        ],
-                    }
-                ],
-                "parallel_tool_calls": True,
-                "tool_choice": "auto",
-                "tools": [],
-            }
-
-            try:
-                resp = requests.post(
-                    verify_endpoint, json=verify_request, timeout=verify_timeout
-                )
-                if resp.status_code == 200:
-                    reward = resp.json().get("reward", 0.0)
-                else:
+    async def _verify(
+        self, session: aiohttp.ClientSession, server: str | None, request: dict
+    ) -> float | None:
+        url = self.verify_endpoints.get(server or "")
+        if url is None:
+            LOG.warning(f"No NeMo Gym verify endpoint for server {server!r}")
+            return None
+        try:
+            async with session.post(url, json=request) as response:
+                if response.status != 200:
                     LOG.warning(
-                        f"Verify request returned status {resp.status_code}: {resp.text[:200]}"
+                        f"Verify request to {url} returned {response.status}: "
+                        f"{(await response.text())[:200]}"
                     )
-                    reward = 0.0
-            except requests.exceptions.RequestException as exc:
-                LOG.warning(f"Verify request failed: {exc}")
-                reward = 0.0
-
-            scores.append(float(reward))
-
-        return np.array(scores)
-
-    return reward_fn
+                    return None
+                body = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+            LOG.warning(f"Verify request to {url} failed: {error}")
+            return None
+        if not isinstance(body, dict):
+            LOG.warning(f"Verify request to {url} returned a {type(body).__name__}")
+            return None
+        return parse_reward(body.get("reward"), f"Verify request to {url}")

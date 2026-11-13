@@ -29,6 +29,10 @@ from axolotl.model_support import (
     resolve_model_support,
     run_model_support_hooks,
 )
+from axolotl.utils.activation_checkpointing import (
+    hf_checkpointing_enabled,
+    offload_placement,
+)
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -254,6 +258,42 @@ def _validate_diffusion_lm_target(cfg, resolved_support) -> None:
         )
 
 
+# Mistral Large 4: reentrant recompute drops the KV-source layer's gradient from the
+# layers sharing its KV. Gemma4: shared per-layer norms / cross-layer shared KV cause
+# "marked ready twice" errors under DDP with reentrant checkpointing.
+NON_REENTRANT_MODEL_TYPES = {
+    "mistral_large4": "Mistral Large 4",
+    "gemma4": "Gemma4",
+    "gemma4_unified": "Gemma4",
+}
+
+
+def resolve_reentrant(cfg):
+    """Settle `activation_checkpointing.reentrant` for transformers' checkpointing."""
+    if not hf_checkpointing_enabled(cfg):
+        return
+    checkpointing = cfg.activation_checkpointing
+    if checkpointing.get("reentrant") is None:
+        # Non-reentrant is PyTorch's recommended default. DeepSpeed ZeRO-3 keeps
+        # reentrant: non-reentrant recompute sees the partitioned parameters and
+        # raises a CheckpointError.
+        checkpointing["reentrant"] = bool(
+            cfg.unfrozen_parameters is None
+            and cfg.rl is None
+            and (
+                is_deepspeed_zero3_config(cfg.deepspeed)
+                or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+            )
+        )
+    model_name = NON_REENTRANT_MODEL_TYPES.get(cfg.model_config_type)
+    if model_name and checkpointing["reentrant"] is not False:
+        LOG.warning(
+            f"{model_name} requires non-reentrant activation checkpointing. Setting "
+            "activation_checkpointing.reentrant: false."
+        )
+        checkpointing["reentrant"] = False
+
+
 def normalize_config(cfg):
     # setup some derived config / hyperparams
     if not cfg.use_ray:
@@ -337,7 +377,7 @@ def normalize_config(cfg):
     )
 
     cfg.model_config_type = model_config.model_type
-    validate_recurrent_model_config(cfg)
+    validate_recurrent_model_config(cfg, model_config)
 
     native_text_diffusion = (
         resolved_support is not None
@@ -492,54 +532,19 @@ def normalize_config(cfg):
     if isinstance(cfg.pretraining_dataset, dict):
         cfg.pretraining_dataset = [cfg.pretraining_dataset]
 
-    if (
-        cfg.gradient_checkpointing
-        and cfg.unfrozen_parameters is None
-        and cfg.rl is None
-        and "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
-    ):
-        # Non-reentrant is PyTorch's recommended default. DeepSpeed ZeRO-3 keeps
-        # reentrant: non-reentrant recompute sees the partitioned parameters and
-        # raises a CheckpointError. Other checkpoint kwargs the user set are kept.
-        cfg.gradient_checkpointing_kwargs = {
-            **(cfg.gradient_checkpointing_kwargs or {}),
-            "use_reentrant": is_deepspeed_zero3_config(cfg.deepspeed)
-            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
-        }
+    resolve_reentrant(cfg)
 
-    # Reentrant recompute drops the KV-source layer's gradient from the layers sharing its KV.
-    if cfg.model_config_type == "mistral_large4" and cfg.gradient_checkpointing:
-        if cfg.gradient_checkpointing_kwargs is None:
-            cfg.gradient_checkpointing_kwargs = {}
-        if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
-            LOG.warning(
-                "Mistral Large 4 requires use_reentrant=False for gradient checkpointing. "
-                "Setting use_reentrant=False."
-            )
-            cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
-
-    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
-    # cross-layer shared KV cause "marked ready twice" errors with reentrant
-    # checkpointing) and ddp_find_unused_parameters=True (per_layer_projection
-    # LoRA / frozen mm params may not receive gradients on every step). The
-    # unified variant shares the same constraints.
+    # Gemma4 requires ddp_find_unused_parameters=True for DDP (per_layer_projection
+    # LoRA / frozen mm params may not receive gradients on every step). The unified
+    # variant shares the same constraint.
     if cfg.model_config_type in ("gemma4", "gemma4_unified"):
-        if cfg.gradient_checkpointing:
-            if cfg.gradient_checkpointing_kwargs is None:
-                cfg.gradient_checkpointing_kwargs = {}
-            if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
-                LOG.warning(
-                    "Gemma4 requires use_reentrant=False for gradient checkpointing "
-                    "in distributed training. Setting use_reentrant=False."
-                )
-                cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
         if cfg.ddp and cfg.ddp_find_unused_parameters is None:
-            if cfg.activation_offloading is True:
-                # activation_offloading uses checkpoint wrappers that conflict
+            if offload_placement(cfg, "all") != "none":
+                # TRL's offloader uses checkpoint wrappers that conflict
                 # with find_unused_parameters (causes "marked ready twice").
                 # Use freeze_mm_modules instead to eliminate unused params.
                 LOG.info(
-                    "Gemma4 + DDP + activation_offloading: skipping "
+                    "Gemma4 + DDP + activation_checkpointing.offload.all: skipping "
                     "ddp_find_unused_parameters (use freeze_mm_modules to "
                     "handle unused vision/audio params)."
                 )
@@ -549,14 +554,6 @@ def normalize_config(cfg):
                     "Auto-enabling."
                 )
                 cfg.ddp_find_unused_parameters = True
-
-    # MixLoRA reads _aux_loss from the module after the forward pass; reentrant
-    # checkpointing recomputes forward under no_grad, dropping the autograd graph.
-    if cfg.adapter == "mixlora" and cfg.gradient_checkpointing:
-        if cfg.gradient_checkpointing_kwargs is None:
-            cfg.gradient_checkpointing_kwargs = {}
-        if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
-            cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
@@ -587,6 +584,14 @@ def validate_config(
 ) -> DictDefault:
     from axolotl.integrations.base import get_builtin_plugins
     from axolotl.utils.schemas import config as config_schema
+    from axolotl.utils.schemas.activation_checkpointing import (
+        migrate_legacy_checkpointing_keys,
+    )
+
+    # before any validator, so plugin and cross-key validators only see the block
+    warning = migrate_legacy_checkpointing_keys(cfg)
+    if warning:
+        LOG.warning(warning)
 
     if cfg.plugins or get_builtin_plugins():
         AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()

@@ -18,12 +18,17 @@ import pytest
 
 from axolotl.utils.dict import DictDefault
 
+from tests.cuda_init_guard import CudaInitGuard
+from tests.global_state import GlobalStateGuard
 from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
 )
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
+
+# Installed at import so it also sees the conftests pytest loads before pytest_configure.
+_cuda_init_guard = CudaInitGuard.from_env()
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +58,22 @@ def capture_axolotl_warnings(caplog):
         ax_logger.propagate = old_propagate
 
 
+@pytest.fixture(params=["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def inferred_device(request):
+    """For tests whose device is picked by Accelerate/PEFT rather than the test itself.
+
+    Each case runs only on the matching host, so the CPU lane keeps the cpu case and the
+    GPU lane's ``-m gpu`` keeps the cuda case without either running on the wrong device.
+    """
+    import torch
+
+    if request.param == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+    if request.param == "cpu" and torch.cuda.is_available():
+        pytest.skip("the library places this test on the accelerator here")
+    return request.param
+
+
 def _apply_transformers_test_shims():
     import transformers.utils as _transformers_utils
     import transformers.utils.import_utils as _import_utils
@@ -80,8 +101,11 @@ def _apply_transformers_test_shims():
         )
 
 
-def pytest_configure(config):  # pylint: disable=unused-argument
+def pytest_configure(config):
     _apply_transformers_test_shims()
+    config.pluginmanager.register(GlobalStateGuard(config), "axolotl-global-state")
+    if _cuda_init_guard is not None:
+        config.pluginmanager.register(_cuda_init_guard, "axolotl-cuda-init-guard")
 
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so

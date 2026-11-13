@@ -25,9 +25,10 @@ def _round_up(length: int, multiple: int) -> int:
 class AxolotlDPODataCollatorWithPadding(DPODataCollatorWithPadding):
     """DPO data collator that pads to a multiple of ``pad_to_multiple_of``.
 
+    Inherits ``pad_token_id`` and ``is_encoder_decoder`` from TRL's
+    ``DPODataCollatorWithPadding``.
+
     Args:
-        pad_token_id: Tokenizer pad token id (inherited).
-        is_encoder_decoder: Whether the model is encoder-decoder (inherited).
         pad_to_multiple_of: If set, padded lengths are rounded up to this
             multiple. Helps stabilize Triton autotune caches.
     """

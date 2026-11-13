@@ -43,7 +43,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
                 "learning_rate": 0.0005,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
                 "special_tokens": {"pad_token": "<|endoftext|>"},

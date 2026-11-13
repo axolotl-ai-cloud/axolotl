@@ -20,24 +20,21 @@ import math
 import pytest
 import torch
 
-
-def _is_hopper_or_newer() -> bool:
-    if not torch.cuda.is_available():
-        return False
-    major, _ = torch.cuda.get_device_capability()
-    return major >= 9
-
+from tests.cuda_gates import cuda_capability_below
 
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires CUDA GPU"),
     pytest.mark.skipif(
-        not _is_hopper_or_newer(),
+        cuda_capability_below(9),
         reason="SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+)",
     ),
     pytest.mark.skipif(
         importlib.util.find_spec("kernels") is None,
         reason="HF `kernels` package not installed",
     ),
+    # sm90+ only: the B200 lane is the only single-GPU lane newer than L40S
+    pytest.mark.gpu_blackwell,
+    pytest.mark.usefixtures("sonicmoe_setup"),
 ]
 
 

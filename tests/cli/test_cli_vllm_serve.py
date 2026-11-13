@@ -230,6 +230,29 @@ def test_reasoning_parser_without_enable_flag(cli_runner, tmp_path, native_serve
     assert cmd[cmd.index("--reasoning-parser") + 1] == "deepseek_r1"
 
 
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, 2),
+        ({"trl": {"async_prefetch": True, "max_staleness": 3}}, 5),
+        (
+            {
+                "trl": {"async_prefetch": True, "max_staleness": 3},
+                "nemo_gym_enabled": True,
+                "nemo_gym_multi_turn": True,
+            },
+            6,
+        ),
+    ],
+)
+def test_max_loras_covers_async_grpo_adapters(overrides, expected):
+    from axolotl.cli.vllm_serve import _max_loras
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"rl": "grpo", "trl": {}, **overrides})
+    assert _max_loras(cfg) == expected
+
+
 def _flag(cmd, name):
     return cmd[cmd.index(name) + 1] if name in cmd else None
 
@@ -290,3 +313,45 @@ def test_native_multinode_rejects_invalid_layout(
         cli, ["vllm-serve", str(config), "--node-rank", str(node_rank)]
     )
     assert isinstance(result.exception, ValueError)
+
+
+@pytest.mark.parametrize(
+    "overrides, returns",
+    [
+        ({"trl": {"async_prefetch": True, "top_k": 512}}, True),
+        ({"trl": {"async_prefetch": True, "top_p": 0.95, "top_k": 512}}, True),
+        ({"trl": {"async_prefetch": True, "top_p": 1.0, "top_k": 0}}, False),
+        ({"trl": {"async_prefetch": True}}, False),
+        # synchronous GRPO samples in its own engine
+        ({"trl": {"top_k": 512}}, False),
+        # EBFT and NeMo Gym agents sample without TRL's replay
+        ({"rl": "ebft", "trl": {"async_prefetch": True, "top_k": 512}}, False),
+        (
+            {
+                "trl": {"async_prefetch": True, "top_k": 512},
+                "nemo_gym_enabled": True,
+                "nemo_gym_multi_turn": True,
+            },
+            False,
+        ),
+    ],
+)
+def test_sampling_mask_follows_truncated_async_sampling(overrides, returns):
+    from axolotl.cli.vllm_serve import _returns_sampling_mask
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"rl": "grpo", **overrides})
+    assert _returns_sampling_mask(cfg) is returns
+
+
+@pytest.mark.parametrize("vllm_030", [True, False])
+def test_native_top_k_returns_sampling_mask(
+    cli_runner, tmp_path, native_serve, monkeypatch, vllm_030
+):
+    monkeypatch.setattr("axolotl.cli.vllm_serve._vllm_at_least", lambda _v: vllm_030)
+    calls = native_serve(rl="grpo", trl={"async_prefetch": True, "top_k": 512})
+    _run(cli_runner, tmp_path)
+    _, cmd, _ = calls[0]
+    assert ("--return-sampling-mask" in cmd) is vllm_030
+    assert ("--enable-scale-out" in cmd) is vllm_030
+    assert _flag(cmd, "--logprobs-mode") == "processed_logprobs"

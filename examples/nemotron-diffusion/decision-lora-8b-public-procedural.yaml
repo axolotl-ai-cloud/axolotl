@@ -28,9 +28,9 @@ optimizer: adamw_torch
 lr_scheduler: constant
 warmup_steps: 0
 max_grad_norm: 1.0
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 dataloader_num_workers: 0
 dataset_num_proc: 4
 remove_unused_columns: false

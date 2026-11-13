@@ -14,6 +14,8 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaAttention
 from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeAttention
 
+from tests.accelerator import DEVICE_TYPE
+
 pytest.importorskip("triton")
 
 from axolotl.cli.config import load_cfg
@@ -69,6 +71,47 @@ MODEL_CONFIGS = [
 def init_accelerate():
     """Initialize Accelerate state before tests."""
     _ = PartialState()
+
+
+@pytest.fixture(autouse=True)
+def _restore_patched_classes():
+    # Model loading (which also turns on TF32 under tf32: auto) and
+    # patch_self_attn_lora change these in place; a later test's unpatched
+    # reference would otherwise run the patched code at TF32.
+    from transformers.modeling_utils import ModuleUtilsMixin, PreTrainedModel
+
+    classes = [
+        LlamaAttention,
+        Qwen3MoeAttention,
+        LlamaForCausalLM,
+        PreTrainedModel,
+        ModuleUtilsMixin,
+    ]
+    saved = [(cls, dict(vars(cls))) for cls in classes]
+    # The legacy allow_tf32 flags read through these; root before its children.
+    backends = [
+        torch.backends,
+        torch.backends.cuda.matmul,
+        torch.backends.cudnn,
+        getattr(torch.backends.cudnn, "conv", None),
+        getattr(torch.backends.cudnn, "rnn", None),
+    ]
+    precision = torch.get_float32_matmul_precision()
+    fp32 = [getattr(backend, "fp32_precision", None) for backend in backends]
+    yield
+    torch.set_float32_matmul_precision(precision)
+    for backend, value in zip(backends, fp32, strict=True):
+        if value is not None:
+            backend.fp32_precision = value
+    for cls, attrs in saved:
+        for name in set(vars(cls)) - set(attrs):
+            delattr(cls, name)
+        for name, value in attrs.items():
+            if vars(cls).get(name) is not value and name not in (
+                "__dict__",
+                "__weakref__",
+            ):
+                setattr(cls, name, value)
 
 
 @pytest.fixture
@@ -149,7 +192,7 @@ def test_swiglu_mlp_integration(small_llama_model):
             "bias": "none",
         }
     )
-    model = PeftModelForCausalLM(small_llama_model, peft_config).to("cuda")
+    model = PeftModelForCausalLM(small_llama_model, peft_config).to(DEVICE_TYPE)
     cfg = DictDefault({"lora_mlp_kernel": True})
 
     batch_size, seq_len = 2, 10
@@ -187,15 +230,21 @@ def test_swiglu_mlp_integration(small_llama_model):
     assert torch.allclose(original_output, patched_output, rtol=1e-4)
 
 
-@pytest.mark.parametrize(
-    "model_name,expected_activation",
-    [
-        ("mhenrichsen/gemma-2b", apply_lora_mlp_geglu),
-    ],
-)
-def test_model_specific_activation(model_name, expected_activation):
+def test_model_specific_activation():
     """Test that each model type gets the correct activation function."""
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    from transformers import GemmaConfig, GemmaForCausalLM
+
+    model = GemmaForCausalLM(
+        GemmaConfig(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=8,
+        )
+    )
     peft_config = get_peft_config(
         {
             "peft_type": "LORA",
@@ -212,7 +261,7 @@ def test_model_specific_activation(model_name, expected_activation):
 
     patched_model = apply_lora_kernel_patches(model, cfg)
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is expected_activation
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_geglu
 
 
 def test_kernel_patch_conditions():
@@ -316,7 +365,7 @@ def test_kernel_config_options():
                 "bias": "none",
             }
         )
-        model = PeftModelForCausalLM(small_llama_model, peft_config).to("cuda")
+        model = PeftModelForCausalLM(small_llama_model, peft_config).to(DEVICE_TYPE)
         cfg = DictDefault(config_dict)
         patched_model = apply_lora_kernel_patches(model, cfg)
 
@@ -359,7 +408,9 @@ def test_model_architecture(model_config):
     """Test LoRA kernel patches across different model architectures."""
     # Load model with appropriate dtype
     model = AutoModelForCausalLM.from_pretrained(
-        model_config["name"], torch_dtype=model_config["dtype"], device_map="cuda:0"
+        model_config["name"],
+        torch_dtype=model_config["dtype"],
+        device_map=f"{DEVICE_TYPE}:0",
     )
 
     # Apply LoRA configuration
@@ -630,7 +681,7 @@ def _wrapped_gdn_proj(in_features=256, out_features=384, use_dora=False):
         lora_dropout=0.0,
         use_dora=use_dora,
     )
-    peft_model = get_peft_model(_Holder().to("cuda").to(torch.bfloat16), config)
+    peft_model = get_peft_model(_Holder().to(DEVICE_TYPE).to(torch.bfloat16), config)
     proj = peft_model.base_model.model.in_proj_qkv
     proj.train()
     return proj
@@ -639,9 +690,9 @@ def _wrapped_gdn_proj(in_features=256, out_features=384, use_dora=False):
 def _run_gdn_proj(proj, fused, in_features=256, seed=0):
     torch.manual_seed(seed)
     inputs = torch.randn(
-        2, 16, in_features, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        2, 16, in_features, device=DEVICE_TYPE, dtype=torch.bfloat16, requires_grad=True
     )
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         out = apply_lora_linear(proj, inputs) if fused else proj(inputs)
     out.float().pow(2).mean().backward()
     grad = inputs.grad.detach().float().clone()
@@ -703,7 +754,7 @@ def _wrapped_gdn_block(targets, in_features=256, use_dora=False):
         use_dora=use_dora,
     )
     block = get_peft_model(
-        _Block().to("cuda").to(torch.bfloat16), config
+        _Block().to(DEVICE_TYPE).to(torch.bfloat16), config
     ).base_model.model
     block.train()
     # Perturb lora_B / magnitude so adapters (and DoRA scaling) are non-trivial.
@@ -718,9 +769,9 @@ def _run_gdn_block(block, fused, targets, in_features=256, seed=0):
     names = tuple(_GDN_IN_SIZES)
     torch.manual_seed(seed)
     inputs = torch.randn(
-        2, 16, in_features, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        2, 16, in_features, device=DEVICE_TYPE, dtype=torch.bfloat16, requires_grad=True
     )
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         if fused:
             outs = apply_lora_gdn_in_proj(block, inputs, names)
         else:
@@ -799,7 +850,7 @@ def _wrapped_gdn_block_nf4(targets, in_features=256, base_dtype=torch.bfloat16):
                 )
 
     block = get_peft_model(
-        _Block().to(base_dtype).to("cuda"),
+        _Block().to(base_dtype).to(DEVICE_TYPE),
         LoraConfig(r=16, lora_alpha=32, target_modules=list(targets), lora_dropout=0.0),
     ).base_model.model
     block.train()
@@ -868,7 +919,7 @@ def _wrapped_gdn_block_fp32(targets, in_features=256, use_dora=False):
         lora_dropout=0.0,
         use_dora=use_dora,
     )
-    block = get_peft_model(_Block().to("cuda"), config).base_model.model
+    block = get_peft_model(_Block().to(DEVICE_TYPE), config).base_model.model
     block.train()
     with torch.no_grad():
         for name, param in block.named_parameters():
@@ -919,7 +970,7 @@ def test_apply_lora_gdn_in_proj_backward_under_dropout():
     block = _wrapped_gdn_block_fp32(targets)
 
     torch.manual_seed(0)
-    X = torch.randn(2, 16, 256, device="cuda")
+    X = torch.randn(2, 16, 256, device=DEVICE_TYPE)
     mask = (torch.rand_like(X) > 0.5).to(X.dtype) / 0.5  # inverted-dropout scale, p=0.5
     for name in names:
         getattr(block, name).lora_dropout["default"] = _FixedDropout(mask)
@@ -947,7 +998,7 @@ def test_apply_lora_gdn_in_proj_dora_backward_under_dropout():
     block = _wrapped_gdn_block_fp32(targets, use_dora=True)
 
     torch.manual_seed(0)
-    x = torch.randn(2, 16, 256, device="cuda")
+    x = torch.randn(2, 16, 256, device=DEVICE_TYPE)
     mask = (torch.rand_like(x) > 0.5).to(x.dtype) / 0.5  # inverted-dropout scale, p=0.5
     for name in targets:  # only adapted projections carry lora_dropout
         getattr(block, name).lora_dropout["default"] = _FixedDropout(mask)
@@ -1043,7 +1094,7 @@ def _build_qwen3_5_gdn_peft_model(target_modules):
             "bias": "none",
         }
     )
-    return PeftModelForCausalLM(model, peft_config).to("cuda")
+    return PeftModelForCausalLM(model, peft_config).to(DEVICE_TYPE)
 
 
 def test_apply_lora_kernel_patches_wires_gdn_layer():
@@ -1064,10 +1115,10 @@ def test_apply_lora_kernel_patches_wires_gdn_layer():
 
     # in-projections share the hidden-size input; out_proj consumes value_dim.
     x_in = torch.randn(
-        2, 8, model.config.hidden_size, device="cuda", dtype=torch.float32
+        2, 8, model.config.hidden_size, device=DEVICE_TYPE, dtype=torch.float32
     )
     x_out = torch.randn(
-        2, 8, ref["out_proj"].in_features, device="cuda", dtype=torch.float32
+        2, 8, ref["out_proj"].in_features, device=DEVICE_TYPE, dtype=torch.float32
     )
     with torch.no_grad():
         fused = linear_attn.apply_in_proj_fused(x_in)

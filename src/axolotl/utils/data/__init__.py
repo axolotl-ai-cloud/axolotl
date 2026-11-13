@@ -1,15 +1,6 @@
 """Init for `axolotl.utils.data` module."""
 
-from axolotl.utils.data.rl import prepare_preference_datasets
-from axolotl.utils.data.sft import (
-    get_dataset_wrapper,
-    prepare_datasets,
-)
-from axolotl.utils.data.streaming import (
-    encode_streaming,
-    wrap_streaming_dataset,
-)
-from axolotl.utils.data.utils import md5
+from axolotl.utils import make_lazy_getattr
 
 __all__ = [
     "encode_streaming",
@@ -19,3 +10,15 @@ __all__ = [
     "prepare_datasets",
     "md5",
 ]
+
+# lazy so streaming DataLoader workers importing a submodule skip the sft/rl loaders
+_LAZY_IMPORTS = {
+    "encode_streaming": ".streaming",
+    "wrap_streaming_dataset": ".streaming",
+    "prepare_preference_datasets": ".rl",
+    "get_dataset_wrapper": ".wrappers",
+    "prepare_datasets": ".sft",
+    "md5": ".utils",
+}
+
+__getattr__ = make_lazy_getattr(_LAZY_IMPORTS, __name__, globals())

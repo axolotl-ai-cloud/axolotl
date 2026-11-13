@@ -49,9 +49,9 @@ lora_target_linear: true
 bf16: auto
 attn_implementation: flex_attention
                         # (full-model compile conflicts with gradient checkpointing + flex_attention)
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true   # required for flex_attention (non-reentrant causes CheckpointError)
+activation_checkpointing:
+  enabled: true
+  reentrant: true  # required for flex_attention (non-reentrant causes CheckpointError)
 
 special_tokens:
   pad_token: "<|end_of_text|>"

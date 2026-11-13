@@ -75,6 +75,27 @@ def test_empty_or_mixed_replicas_are_not_ready(monkeypatch):
     assert not client._replicas_ready("/op", "next", float("inf"))
 
 
+def test_serves_checks_the_operation_and_every_replica(monkeypatch):
+    stale = {"state": "READY", "currentSnapshotIdentity": "old"}
+    client = make_client(
+        monkeypatch,
+        [
+            operation(),
+            {"replicas": [ready()]},
+            operation(),
+            {"replicas": [ready(), stale]},
+            operation("HOT_LOAD_STATE_FAILED"),
+            operation(),
+        ],
+    )
+    assert client.serves("op", "next") and client.ready_identity == "next"
+    client.ready_identity = None
+    assert not client.serves("op", "next")
+    assert not client.serves("op", "next")
+    assert not client.serves("op", "other")
+    assert client.ready_identity is None
+
+
 def test_sample_uses_exact_token_ids(monkeypatch):
     client = make_client(
         monkeypatch,

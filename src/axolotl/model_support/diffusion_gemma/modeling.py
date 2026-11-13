@@ -11,6 +11,7 @@ from transformers.cache_utils import DynamicCache
 from transformers.models.diffusion_gemma import DiffusionGemmaForBlockDiffusion
 from transformers.utils import ModelOutput
 
+from axolotl.utils.activation_checkpointing import HAS_ACTIVATION_CHECKPOINTING_API
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -174,14 +175,14 @@ def _register_router_topk_saves(model) -> int:
 def _sac_checkpoint_kwargs(gradient_checkpointing_kwargs: dict | None) -> dict:
     """Non-reentrant checkpoint kwargs carrying a SAC ``context_fn``.
 
-    ``selective_checkpointing:`` (``apply_selective_checkpointing``) supplies its own
+    ``activation_checkpointing.selective`` (``apply_selective_checkpointing``) supplies its own
     context_fn; without it, a policy that saves only the registered ops (the router
     topk) is installed, as the expert-parallel plugin does.
     """
     kwargs = dict(gradient_checkpointing_kwargs or {})
     if kwargs.get("use_reentrant", False):
         raise ValueError(
-            "DiffusionGemma requires gradient_checkpointing_kwargs.use_reentrant: false; "
+            "DiffusionGemma requires activation_checkpointing.reentrant: false; "
             "reentrant checkpointing drops the decoder -> encoder gradient and cannot "
             "replay the router's topk."
         )
@@ -196,14 +197,10 @@ def _sac_checkpoint_kwargs(gradient_checkpointing_kwargs: dict | None) -> dict:
 class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
     """DiffusionGemma with an explicit packed encoder/canvas forward contract."""
 
-    def gradient_checkpointing_enable(
-        self, gradient_checkpointing_kwargs=None, **kwargs
-    ):
+    def _enable_split_checkpointing(self, super_enable, checkpointing_kwargs, **kwargs):
         routers = _register_router_topk_saves(self)
-        checkpoint_kwargs = _sac_checkpoint_kwargs(gradient_checkpointing_kwargs)
-        super().gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs=checkpoint_kwargs, **kwargs
-        )
+        checkpoint_kwargs = _sac_checkpoint_kwargs(checkpointing_kwargs)
+        super_enable(checkpoint_kwargs, **kwargs)
         # Encoder and decoder layers checkpoint only their feed-forward half.
         count = set_encoder_feed_forward_checkpointing(self, True, checkpoint_kwargs)
         LOG.info(
@@ -214,9 +211,37 @@ class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
             routers,
         )
 
-    def gradient_checkpointing_disable(self, *args, **kwargs):
-        super().gradient_checkpointing_disable(*args, **kwargs)
-        set_encoder_feed_forward_checkpointing(self, False)
+    # Overriding both names recurses on transformers 5.23+, where the new name
+    # calls back into an overridden ``gradient_checkpointing_enable``.
+    if HAS_ACTIVATION_CHECKPOINTING_API:
+
+        def activation_checkpointing_enable(
+            self, activation_checkpointing_kwargs=None, **kwargs
+        ):
+            self._enable_split_checkpointing(
+                super().activation_checkpointing_enable,
+                activation_checkpointing_kwargs,
+                **kwargs,
+            )
+
+        def activation_checkpointing_disable(self):
+            super().activation_checkpointing_disable()
+            set_encoder_feed_forward_checkpointing(self, False)
+
+    else:
+
+        def gradient_checkpointing_enable(
+            self, gradient_checkpointing_kwargs=None, **kwargs
+        ):
+            self._enable_split_checkpointing(
+                super().gradient_checkpointing_enable,
+                gradient_checkpointing_kwargs,
+                **kwargs,
+            )
+
+        def gradient_checkpointing_disable(self, *args, **kwargs):
+            super().gradient_checkpointing_disable(*args, **kwargs)
+            set_encoder_feed_forward_checkpointing(self, False)
 
     # transformers answers these by scanning the source of cls.__module__ for its
     # decorators, which this module lacks; defer to the upstream class.

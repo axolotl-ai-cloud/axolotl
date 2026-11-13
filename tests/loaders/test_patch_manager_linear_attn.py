@@ -166,3 +166,57 @@ def test_pure_ssm_patch_skipped_when_unpacked(monkeypatch, model_type, patch_nam
     _manager(model_type)._apply_model_specific_patches()
 
     assert calls == []
+
+
+ASYNC_GRPO = {"rl": "grpo", "trl": {"async_prefetch": True}}
+
+
+@pytest.mark.parametrize("model_type,target", GDN_PATCHES.items())
+def test_async_grpo_leaves_hooked_models_to_tree_recurrence(
+    monkeypatch, model_type, target
+):
+    """tree-recurrence's hooks follow the trie through the stock forwards, which the
+    packing patch would replace."""
+    calls = []
+    monkeypatch.setattr(target, lambda torch_compile: calls.append(model_type))
+
+    _manager(model_type, **ASYNC_GRPO)._apply_model_specific_patches()
+
+    assert calls == []
+
+
+def test_async_grpo_keeps_the_packing_patch_of_chained_models(monkeypatch):
+    """Mamba packs each rollout as its own chain, through its boundary patch."""
+    from axolotl.monkeypatch.models.mamba import modeling as mamba_modeling
+
+    calls = []
+    monkeypatch.setattr(
+        mamba_modeling,
+        "patch_mamba_modeling_packing",
+        lambda kernels_enabled: calls.append(kernels_enabled),
+    )
+
+    _manager("mamba", **ASYNC_GRPO)._apply_model_specific_patches()
+
+    assert calls == [False]
+
+
+@pytest.mark.parametrize("overrides,installs", [(ASYNC_GRPO, True), ({}, False)])
+def test_tree_hooks_installed_after_load_for_async_grpo(
+    monkeypatch, overrides, installs
+):
+    from tree_recurrence import Support
+
+    from axolotl.monkeypatch.models import tree_packing
+
+    models = []
+    monkeypatch.setattr(
+        tree_packing,
+        "packing_support",
+        lambda model: models.append(model) or Support("tree", "test"),
+    )
+    model = MagicMock()
+
+    _manager("qwen3_5", **overrides)._apply_tree_packing(model)
+
+    assert models == ([model] if installs else [])

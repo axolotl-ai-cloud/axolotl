@@ -66,9 +66,9 @@ calls the function it replaced when it runs, so a kernel bound later (by
 `kernelize`, say) is used too. `uninstall(model)` restores the modules.
 
 Both TRL tree formats are read: TRL 1.16's `tree_kv_index` /
-`tree_cu_seqlens_q` / `tree_cu_seqlens_k`, and huggingface/trl#7686's, which adds
-`tree_segment_parents` and `tree_segment_depths`. A row of whole samples is a trie
-without branches, so chains take the same path.
+`tree_cu_seqlens_q` / `tree_cu_seqlens_k`, and TRL 1.17's (huggingface/trl#7686),
+which adds `tree_segment_parents` and `tree_segment_depths`. A row of whole samples
+is a trie without branches, so chains take the same path.
 
 ## How a tree runs
 
@@ -94,10 +94,10 @@ APIs, so all of this is tested on CPU against samples run alone.
 
 ## With TRL
 
-TRL 1.16's `AsyncGRPOTrainer` loads the model inside its constructor and refuses
-recurrent layers right away. Build it under `tree_recurrent_models`, which installs
-the hooks on the model TRL loads and hides its `layer_types` until the trainer is
-built:
+TRL's `AsyncGRPOTrainer` (1.16 or 1.17) loads the model inside its constructor and
+refuses recurrent layers right away: TRL 1.16 every one, TRL 1.17 all but Gated
+DeltaNet. Build it under `tree_recurrent_models`, which installs the hooks on the
+model TRL loads and hides its `layer_types` until the trainer is built:
 
 ```python
 from tree_recurrence.integrations.trl import tree_recurrent_models
@@ -112,7 +112,8 @@ trainer.train()
 For `chains` support, `ChainRow`, `ChainTokenBudgetBatcher` and
 `ChainFixedCountBatcher` make every sample its own chain. `tree_kwargs_from_batch`
 turns a collated batch of either format into forward kwargs. `guarded_flops` works
-around TRL 1.16's FLOPs estimate failing on some MoE configs (huggingface/trl#7069).
+around TRL's FLOPs estimate failing on some MoE configs (huggingface/trl#7069, still
+in 1.17).
 
 Examples, each runnable on its own:
 
@@ -127,11 +128,13 @@ Examples, each runnable on its own:
   a few steps on two H200s on Modal, from a checkout (`modal run
   examples/modal_async_grpo.py --example lfm2_5_8b_a1b`).
 
-huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
-Each modeling module has one owner: a module TRL patched first is left to TRL, and a
-module patched here is recorded in TRL's patched set, so TRL does not wrap it again.
-`install(model, backends={"gated_delta_net": "trl"})` hands Gated DeltaNet to TRL when
-TRL has it.
+TRL 1.17 has its own Gated DeltaNet tree kernel, `patch_tree_gdn`
+(huggingface/trl#7686; Triton, so CUDA only), and applies it to models whose only
+recurrent layers are Gated DeltaNet (Qwen3.5). Each modeling module has one owner: a
+module TRL patched first is left to TRL, and a module patched here is recorded in
+TRL's patched set, so TRL does not wrap it again. Under `tree_recurrent_models` the
+hooks install first, so Gated DeltaNet runs here; `install(model,
+backends={"gated_delta_net": "trl"})` hands it to TRL when TRL has it.
 
 ## Other models
 

@@ -55,6 +55,14 @@ from axolotl.loaders.utils import (
 )
 from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.telemetry.errors import send_errors
+from axolotl.utils.activation_checkpointing import (
+    checkpointing_config,
+    checkpointing_kwargs,
+    enable_activation_checkpointing,
+    fsdp_checkpointing_enabled,
+    hf_checkpointing_enabled,
+    offload_placement,
+)
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -436,6 +444,7 @@ class ModelLoader:
         self._configure_experts_implementation()
         self._apply_selective_checkpointing()
         self._apply_activation_checkpointing()
+        self._configure_fsdp_activation_checkpointing()
         self._resize_token_embeddings()
         self._reinitialize_classification_head()
         self._adjust_model_config()
@@ -503,35 +512,73 @@ class ModelLoader:
 
         self.model.set_experts_implementation(impl)
 
+    def _selective_checkpointing_kwargs(self) -> dict | None:
+        sac = checkpointing_config(self.cfg).selective
+        if sac is None:
+            return None
+        sac_kwargs = sac if isinstance(sac, dict) else {}
+        return {
+            "save": sac_kwargs.get("save"),
+            "save_sliding_window": bool(sac_kwargs.get("save_sliding_window")),
+            "recompute_layer_types": sac_kwargs.get("recompute_layer_types"),
+            "offload": offload_placement(self.cfg, "selective") == "cpu",
+            "save_modules": sac_kwargs.get("save_modules"),
+            "save_matmul_min_k": sac_kwargs.get("save_matmul_min_k"),
+        }
+
     def _apply_selective_checkpointing(self):
-        sac = self.cfg.selective_checkpointing
-        if not sac:
+        sac_kwargs = self._selective_checkpointing_kwargs()
+        # FSDP's checkpoint wrapper takes the policy from _configure_fsdp_activation_checkpointing
+        if sac_kwargs is None or fsdp_checkpointing_enabled(self.cfg):
             return
 
         from axolotl.monkeypatch.selective_checkpointing import (
             apply_selective_checkpointing,
         )
 
-        sac_kwargs = sac if isinstance(sac, dict) else {}
-        apply_selective_checkpointing(
+        apply_selective_checkpointing(self.model, **sac_kwargs)
+
+    def _configure_fsdp_activation_checkpointing(self):
+        """Attach the block's settings for FSDP2's checkpoint wrapper to the model."""
+        if not fsdp_checkpointing_enabled(self.cfg):
+            return
+        if hasattr(self.model, "_enable_split_checkpointing"):
+            raise ValueError(
+                "DiffusionGemma checkpoints only its feed-forward halves through "
+                "transformers' checkpointing; set activation_checkpointing.implementation: "
+                "hf"
+            )
+
+        from axolotl.utils.activation_checkpointing import (
+            FSDPCheckpointing,
+            set_fsdp_checkpointing,
+        )
+
+        checkpoint_kwargs = dict(checkpointing_config(self.cfg).get("kwargs") or {})
+        every_n_layers = checkpoint_kwargs.pop("every_n_layers", 1)
+        context_fn = None
+        sac_kwargs = self._selective_checkpointing_kwargs()
+        if sac_kwargs is not None:
+            from axolotl.monkeypatch.selective_checkpointing import (
+                build_selective_checkpointing,
+            )
+
+            context_fn = build_selective_checkpointing(self.model, **sac_kwargs)
+        set_fsdp_checkpointing(
             self.model,
-            save=sac_kwargs.get("save"),
-            save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
-            recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
-            offload=bool(sac_kwargs.get("offload")),
-            save_modules=sac_kwargs.get("save_modules"),
-            save_matmul_min_k=sac_kwargs.get("save_matmul_min_k"),
+            FSDPCheckpointing(
+                context_fn=context_fn,
+                checkpoint_kwargs=checkpoint_kwargs,
+                every_n_layers=every_n_layers,
+                offload_inputs=offload_placement(self.cfg, "hidden_states") == "cpu",
+            ),
         )
 
     def _apply_activation_checkpointing(self):
-        ao = self.cfg.activation_offloading
-        if ao == "hidden_states":
-            use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
-                "use_reentrant", False
-            )
-            if not use_reentrant:
-                return
-
+        if (
+            offload_placement(self.cfg, "hidden_states") == "cpu"
+            and checkpointing_config(self.cfg).reentrant
+        ):
             from axolotl.monkeypatch.activation_offload_checkpoint import (
                 patch_hidden_states_offload,
             )
@@ -664,14 +711,11 @@ class ModelLoader:
         ):
             self._set_z3_leaf_modules()
 
-        # Apply gradient checkpointing if needed
-        if (
-            self.cfg.adapter in ["lora", "qlora", "mixlora"]
-            and self.cfg.gradient_checkpointing
-        ):
-            self.model.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
-            )
+        # Apply activation checkpointing if needed
+        if self.plugin_manager.is_lora_like(
+            self.cfg.adapter
+        ) and hf_checkpointing_enabled(self.cfg):
+            enable_activation_checkpointing(self.model, checkpointing_kwargs(self.cfg))
 
         self._prepare_model_for_quantization()
 
@@ -1098,7 +1142,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora", "mixlora"]
+            self.plugin_manager.is_lora_like(self.cfg.adapter)
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
@@ -1117,7 +1161,11 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter in ("qlora", "mixlora") and self.cfg.load_in_4bit:
+        elif (
+            self.cfg.adapter != "lora"
+            and self.plugin_manager.is_lora_like(self.cfg.adapter)
+            and self.cfg.load_in_4bit
+        ):
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -1495,12 +1543,13 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora", "mixlora"]
+            and self.plugin_manager.is_lora_like(self.cfg.adapter)
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
-                self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
+                self.model,
+                use_gradient_checkpointing=hf_checkpointing_enabled(self.cfg),
             )
 
     def _convert_embedding_modules_dtype(

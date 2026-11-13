@@ -25,9 +25,10 @@ overflow int32. Two properties are tested:
    bit-equality is not expected against it — only against the same-
    layout int32 kernel below the overflow boundary).
 
-The bench-config test is gated by GPU memory; an L_scattered=262144
-× 16384 bf16 output is ~8.6 GiB and the up-projection weight is
-~64 GiB so we skip when free memory is below the threshold.
+The bench-config test is gated by GPU memory: the L_scattered=262144
+× 16384 bf16 output and the 128 × 2048 × 16384 bf16 up-projection
+weight are 8 GiB each, so we skip when free memory is below the
+threshold.
 """
 
 from __future__ import annotations
@@ -42,6 +43,8 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.kernels import (
 from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
     flatten_sort_count,
 )
+
+from tests.cuda_gates import AtSetup
 
 DEVICE = "cuda"
 DTYPE = torch.bfloat16
@@ -312,12 +315,14 @@ def _has_free_gpu_mem(min_gb: float) -> bool:
     if not torch.cuda.is_available():
         return False
     free, _total = torch.cuda.mem_get_info()
+    # checked at setup, after earlier tests: blocks cached by this process's allocator are reusable
+    free += torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
     return free / (1024**3) >= min_gb
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(80.0),
-    reason="bench shape needs ~80 GiB free GPU memory",
+    AtSetup(lambda: not _has_free_gpu_mem(24.0)),
+    reason="bench shape needs ~24 GiB free GPU memory",
 )
 def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
     """``ParallelLinear.forward`` at the bench shape must route through
@@ -338,12 +343,9 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
     torch.manual_seed(0)
 
     x = torch.randn(_T, _HIDDEN, device=device, dtype=DTYPE)
-    W = (
-        torch.randn(
-            _NUM_EXPERTS, _HIDDEN, 2 * _INTERMEDIATE, device=device, dtype=DTYPE
-        )
-        * 0.01
-    )
+    W = torch.randn(
+        _NUM_EXPERTS, _HIDDEN, 2 * _INTERMEDIATE, device=device, dtype=DTYPE
+    ).mul_(0.01)
 
     logits = torch.randn(_T, _NUM_EXPERTS, device=device)
     _, top_idx = torch.topk(torch.softmax(logits, dim=-1), _TOP_K, dim=-1)
@@ -394,7 +396,8 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
         "auto-dispatch should have set int64_indices=True at the overflow shape"
     )
     assert out.shape == (_T * _TOP_K, 2 * _INTERMEDIATE)
-    assert torch.isfinite(out).all().item()
+    # chunked: isfinite over the whole 8 GiB output allocates ~20 GiB of temporaries
+    assert all(torch.isfinite(rows).all().item() for rows in out.split(1 << 14))
 
 
 # ─── Smaller-shape overflow (runs on L40S / 24 GiB GPUs) ─────────────────────
@@ -408,7 +411,7 @@ _SMALL_MIN_FREE_GIB = 12.0
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    AtSetup(lambda: not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB)),
     reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
 )
 def test_dense_scatter2scatter_int64_at_overflow_shape_small():
@@ -457,7 +460,7 @@ def test_dense_scatter2scatter_int64_at_overflow_shape_small():
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    AtSetup(lambda: not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB)),
     reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
 )
 def test_parallel_linear_overflow_takes_int64_kernel_path_small(monkeypatch):
