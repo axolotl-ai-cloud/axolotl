@@ -54,6 +54,15 @@ bf16: true
 bf16: full  # Equivalent to bf16_full_eval in the HF trainer
 ```
 
+### FP32 master weights {#sec-fp32-masters}
+
+Weights, and so the optimizer's master weights, load in BF16 by default under `bf16: true`. Add `float32: true` to keep FP32 masters while compute stays under BF16 autocast; AMP stays explicit, so `float32: true` without `bf16: true` trains in pure FP32 without autocast (flash attention and cut cross entropy then refuse the config), and `float32: true` with `bfloat16: true` is an error. FP32 masters cost memory: a Qwen3-30B-A3B full fine-tune at EP8 on 8xB200 peaked at 65.1 GiB allocated per rank versus 43.7 GiB with BF16 masters. Under FSDP2 the gathered `lm_head` weight is cast to BF16 before the loss, so cut cross entropy computes in BF16 and its classifier gradient reaches the FP32 master through FSDP's reduce-scatter; without FSDP2 cut cross entropy rejects an FP32 classifier.
+
+```yaml
+bf16: true
+float32: true
+```
+
 ### Keeping norms in fp32 (FSDP2) {#sec-fp32-norms}
 
 Some models declare RMSNorm/LayerNorm layers as fp32 for training

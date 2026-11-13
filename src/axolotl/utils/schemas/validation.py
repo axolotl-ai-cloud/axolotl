@@ -529,6 +529,33 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_float32_master_weights(cls, data):
+        if not data.get("float32"):
+            return data
+        if data.get("bfloat16") or data.get("float16") or data.get("bf16") == "full":
+            raise ValueError(
+                "`float32: true` keeps FP32 weights, but `bfloat16`, `float16` or "
+                "`bf16: full` load half-precision weights. Remove one of them."
+            )
+        if data.get("bf16") is True or data.get("fp16") is True:
+            return data
+        data["bf16"] = False
+        LOG.info(
+            "`float32: true` without `bf16: true`/`fp16: true`: FP32 master weights "
+            "with FP32 compute and no autocast. Set `bf16: true` for FP32 masters "
+            "with BF16 autocast."
+        )
+        attn = str(data.get("attn_implementation") or "")
+        if data.get("flash_attention") or "flash" in attn:
+            raise ValueError(
+                "Flash attention needs half-precision inputs, but `float32: true` "
+                "without `bf16: true` runs without autocast. Set `bf16: true` for "
+                "FP32 master weights with BF16 autocast."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def hint_sample_packing_padding(cls, data):
         if data.get("sample_packing"):
             pad_to_sequence_len = data.get("pad_to_sequence_len")
