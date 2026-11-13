@@ -1,7 +1,10 @@
 """Reusable model-family templates for the vanilla loading path."""
 
+import types
 from importlib.util import find_spec
 from typing import Any
+
+from axolotl.utils.logging import get_logger
 
 from .base import Unsupported
 from .diffusion import is_native_diffusion
@@ -12,6 +15,8 @@ from .profile import (
     ModelHooks,
     ModelStrategies,
 )
+
+LOG = get_logger(__name__)
 
 
 def _causal_lm_auto_model_cls() -> type:
@@ -79,6 +84,38 @@ def _validate_speech_seq2seq(context: ModelHookContext) -> None:
                 f"{key} is not supported for speech seq2seq model_type={model_type}."
             )
 
+    from axolotl.utils.activation_checkpointing import hf_checkpointing_enabled
+
+    # Reentrant recompute drops encoder grads: input_features never require grad.
+    checkpointing = cfg.activation_checkpointing
+    if hf_checkpointing_enabled(cfg) and checkpointing.get("reentrant") is not False:
+        if checkpointing.get("reentrant"):
+            LOG.warning(
+                "Speech seq2seq models require non-reentrant activation "
+                "checkpointing. Setting activation_checkpointing.reentrant: false."
+            )
+        checkpointing["reentrant"] = False
+
+
+def _eval_only_train(self: Any, mode: bool = True) -> Any:
+    from torch import nn
+
+    del mode
+    return nn.Module.train(self, False)
+
+
+def _freeze_batchnorm_stats(context: ModelHookContext) -> None:
+    # Small, zero-padded fine-tuning batches would corrupt the running stats, and an
+    # adapter does not save them; the trainer calls model.train() every step.
+    if context.model is None:
+        return
+    from torch import nn
+
+    for module in context.model.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.train = types.MethodType(_eval_only_train, module)
+            module.eval()
+
 
 def _diffusion_lm_trainer_cls(cfg: Any) -> type | None:
     if not is_native_diffusion(cfg):
@@ -127,7 +164,10 @@ SPEECH_SEQ2SEQ = ModelFamilyTemplate(
         collator_factory=_speech_seq2seq_collator_factory,
     ),
     hooks=ModelHooks(
-        by_phase={ModelHookPhase.CONFIGURE_RUN: (_validate_speech_seq2seq,)}
+        by_phase={
+            ModelHookPhase.CONFIGURE_RUN: (_validate_speech_seq2seq,),
+            ModelHookPhase.AFTER_ADAPTER_LOAD: (_freeze_batchnorm_stats,),
+        }
     ),
 )
 

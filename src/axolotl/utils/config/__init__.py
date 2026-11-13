@@ -235,13 +235,11 @@ def _validate_diffusion_lm_target(cfg, resolved_support) -> None:
 
 # Mistral Large 4: reentrant recompute drops the KV-source layer's gradient from the
 # layers sharing its KV. Gemma4: shared per-layer norms / cross-layer shared KV cause
-# "marked ready twice" errors under DDP with reentrant checkpointing. Cohere Transcribe:
-# reentrant recompute drops encoder LoRA grads, since input_features never require grad.
+# "marked ready twice" errors under DDP with reentrant checkpointing.
 NON_REENTRANT_MODEL_TYPES = {
     "mistral_large4": "Mistral Large 4",
     "gemma4": "Gemma4",
     "gemma4_unified": "Gemma4",
-    "cohere_asr": "Cohere Transcribe",
 }
 
 

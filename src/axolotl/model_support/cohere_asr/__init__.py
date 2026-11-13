@@ -1,9 +1,5 @@
 """Cohere Transcribe (cohere_asr) model support: Parakeet encoder + transformer decoder."""
 
-import types
-
-from torch import nn
-
 from axolotl.model_support.base import ModelSupport
 from axolotl.model_support.profile import (
     ModelHookContext,
@@ -56,22 +52,6 @@ def _validate(context: ModelHookContext) -> None:
         )
 
 
-def _eval_only_train(self: nn.Module, mode: bool = True) -> nn.Module:
-    del mode
-    return nn.Module.train(self, False)
-
-
-def _freeze_batchnorm_stats(context: ModelHookContext) -> None:
-    # Small, zero-padded fine-tuning batches would corrupt the running stats, and an
-    # adapter does not save them; the trainer calls model.train() every step.
-    if context.model is None:
-        return
-    for module in context.model.modules():
-        if isinstance(module, nn.modules.batchnorm._BatchNorm):
-            module.train = types.MethodType(_eval_only_train, module)
-            module.eval()
-
-
 @register_model_support
 class CohereAsrSupport(ModelSupport):
     """Descriptor for Cohere Transcribe."""
@@ -95,7 +75,6 @@ class CohereAsrSupport(ModelSupport):
         hooks=ModelHooks(
             by_phase={
                 ModelHookPhase.CONFIGURE_RUN: (_validate,),
-                ModelHookPhase.AFTER_ADAPTER_LOAD: (_freeze_batchnorm_stats,),
             }
         ),
     )
