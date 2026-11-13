@@ -12,14 +12,13 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from transformers.utils.import_utils import (
-    is_torch_npu_available,
-    is_torch_xla_available,
-)
+from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_tpu
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.activation_checkpointing import (
+    OFFLOAD_TARGETS,
     migrate_legacy_checkpointing_keys,
 )
 from axolotl.utils.schemas.enums import (
@@ -97,6 +96,28 @@ _LORA_KERNEL_FLAGS = (
 )
 
 
+_TPU_UNSUPPORTED_OPTIONS = {
+    "load_in_8bit": "bitsandbytes needs CUDA.",
+    "load_in_4bit": "bitsandbytes needs CUDA.",
+    "flash_attention": "use `attn_implementation: sdpa`.",
+    "xformers_attention": "use `attn_implementation: sdpa`.",
+    "deepspeed": "training runs on a single chip.",
+    "fsdp": "training runs on a single chip.",
+    "fsdp_config": "training runs on a single chip.",
+    "rl": "only supervised fine-tuning is supported so far.",
+    "sample_packing": "packed batches change shape every step.",
+    "batch_flattening": "flattened batches change shape every step.",
+    "torch_compile": "not yet validated with TorchTPU's `tpu` compile backend.",
+    "gpu_memory_limit": "device_map planning does not see TPU memory.",
+    "max_memory": "device_map planning does not see TPU memory.",
+    **dict.fromkeys(_LORA_KERNEL_FLAGS, "the LoRA kernels are Triton-only."),
+}
+_TPU_UNSUPPORTED_PLUGIN_MODULES = (
+    "axolotl.integrations.liger.",
+    "axolotl.integrations.cut_cross_entropy.",
+)
+
+
 def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
 
@@ -105,6 +126,8 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     validators that must predict its outcome.
     """
     if get("rl") or get("nvfp4_merge_aware") or get("lora_merge_aware"):
+        return False
+    if is_tpu():
         return False
     adapter = get("adapter")
     if adapter not in ("lora", "qlora"):
@@ -1955,114 +1978,66 @@ class SystemValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_tpu_config(cls, data):
-        if not is_torch_xla_available():
+        if not is_tpu():
             return data
 
-        # --- features not yet supported on TPU ---
-
-        # quantization
-        if data.get("adapter") == "qlora":
-            raise NotImplementedError(
-                "qlora is not supported on TPU. Use adapter: lora."
-            )
-        for quant in ("load_in_8bit", "load_in_4bit"):
-            if data.get(quant):
-                raise NotImplementedError(
-                    f"{quant} is not supported on TPU. Remove this option."
-                )
-        optimizer = data.get("optimizer") or ""
-        if "bit" in str(optimizer):
-            raise NotImplementedError(
-                f"Optimizer '{optimizer}' uses bitsandbytes which is not supported on TPU."
-            )
-
-        # attention impls: legacy flags may already be normalized into attn_implementation
-        attn_impl = data.get("attn_implementation")
-        if attn_impl and attn_impl not in ("eager", "sdpa"):
-            raise NotImplementedError(
-                f"attn_implementation={attn_impl!r} is not supported on TPU. "
-                "Use 'eager' or 'sdpa'."
-            )
-        for attn_flag in ("flash_attention", "xformers_attention"):
-            if data.get(attn_flag):
-                raise NotImplementedError(
-                    f"{attn_flag} is not supported on TPU. Disable this option."
-                )
-
-        # parallelism: reject everything except plain data-parallel
-        for key in ("deepspeed", "fsdp", "fsdp_config"):
+        for key, reason in _TPU_UNSUPPORTED_OPTIONS.items():
             if data.get(key):
-                raise NotImplementedError(
-                    f"{key} is not supported on TPU. Remove this option."
-                )
+                raise NotImplementedError(f"`{key}` is not supported on TPU: {reason}")
         for key in (
             "tensor_parallel_size",
             "context_parallel_size",
             "expert_parallel_size",
         ):
             if (data.get(key) or 1) > 1:
-                raise NotImplementedError(f"{key} > 1 is not supported on TPU.")
-
-        # RL trainers
-        if data.get("rl"):
-            raise NotImplementedError("RL training (rl:) is not yet supported on TPU.")
-
-        # sample packing / batch flattening (dynamic shapes)
-        if data.get("sample_packing"):
+                raise NotImplementedError(
+                    f"`{key}` > 1 is not supported on TPU: training runs on a single chip."
+                )
+        if data.get("tf32") is True:
             raise NotImplementedError(
-                "sample_packing is not supported on TPU (requires static batch shapes). "
-                "Disable sample_packing."
+                "`tf32` is not supported on TPU: TPUs have no TF32 mode."
             )
-        if data.get("batch_flattening"):
+        if data.get("adapter") == "qlora":
             raise NotImplementedError(
-                "batch_flattening is not supported on TPU. Disable batch_flattening."
+                "`adapter: qlora` is not supported on TPU: bitsandbytes needs CUDA. "
+                "Use `adapter: lora`."
+            )
+        if "bit" in str(data.get("optimizer") or ""):
+            raise NotImplementedError(
+                f"Optimizer {data['optimizer']!r} is not supported on TPU: bitsandbytes needs CUDA."
+            )
+        attn_impl = data.get("attn_implementation")
+        if attn_impl and attn_impl not in ("eager", "sdpa"):
+            raise NotImplementedError(
+                f"attn_implementation={attn_impl!r} is not supported on TPU. "
+                "Use 'eager' or 'sdpa'."
+            )
+        checkpointing = data.get("activation_checkpointing")
+        offload = (
+            checkpointing.get("offload") if isinstance(checkpointing, dict) else None
+        )
+        if isinstance(offload, dict) and any(
+            offload.get(target) not in (None, False, "none")
+            for target in OFFLOAD_TARGETS
+        ):
+            raise NotImplementedError(
+                "`activation_checkpointing.offload` is not supported on TPU: it relies on "
+                "CUDA streams."
             )
 
-        # CUDA-specific kernels and plugins
-        cuda_only_plugins = {
-            "axolotl.integrations.liger.LigerPlugin",
-            "axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin",
-        }
+        from axolotl.integrations.base import normalize_plugin_name
+
         for plugin in data.get("plugins") or []:
-            if plugin in cuda_only_plugins:
+            if normalize_plugin_name(plugin).startswith(
+                _TPU_UNSUPPORTED_PLUGIN_MODULES
+            ):
                 raise NotImplementedError(
-                    f"Plugin '{plugin}' uses CUDA kernels and is not supported on TPU."
-                )
-        for lora_kernel in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_proj_kernel"):
-            if data.get(lora_kernel):
-                raise NotImplementedError(
-                    f"{lora_kernel} uses Triton and is not supported on TPU."
+                    f"Plugin {plugin!r} is not supported on TPU: it uses CUDA kernels."
                 )
 
-        # activation / gradient-checkpoint offload
-        if data.get("activation_offloading"):
-            raise NotImplementedError("activation_offloading is not supported on TPU.")
-        gc_value = data.get("gradient_checkpointing")
-        if isinstance(gc_value, str) and "offload" in gc_value:
-            raise NotImplementedError(
-                "Gradient-checkpoint offload is not supported on TPU. "
-                "Use gradient_checkpointing: true instead."
-            )
-
-        # torch_compile uses the inductor backend, which doesn't target XLA
-        if data.get("torch_compile"):
-            raise NotImplementedError(
-                "torch_compile is not supported on TPU. "
-                "XLA is already a compiler; remove torch_compile."
-            )
-
-        # precision
-        if data.get("fp16"):
-            raise NotImplementedError("fp16 is not supported on TPU. Use bf16: true.")
-        if data.get("tf32"):
-            raise NotImplementedError("tf32 is not supported on TPU.")
-        if data.get("gpu_memory_limit") or data.get("max_memory"):
-            raise NotImplementedError(
-                "gpu_memory_limit / max_memory is not applicable on TPU. Remove this option."
-            )
-
-        # --- auto-set safe defaults for TPU ---
-        data.setdefault("pad_to_sequence_len", True)
+        # Every batch is padded to sequence_len, so a short final batch would be the
+        # only new shape in the run and trigger a recompile.
+        data["pad_to_sequence_len"] = True
         data["dataloader_drop_last"] = True
         data["dataloader_pin_memory"] = False
 

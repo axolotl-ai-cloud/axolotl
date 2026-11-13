@@ -1,0 +1,31 @@
+base_model: Qwen/Qwen3-0.6B
+
+# Flash attention needs CUDA.
+attn_implementation: sdpa
+bf16: true
+
+# On TPU every batch is padded to sequence_len so the graph keeps one shape.
+# Axolotl sets these automatically; they are spelled out here for clarity.
+sequence_len: 1024
+pad_to_sequence_len: true
+dataloader_drop_last: true
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+val_set_size: 0.01
+dataset_prepared_path: ./data/tpu-qwen3-fft
+output_dir: ./outputs/tpu-qwen3-fft
+
+num_epochs: 1
+micro_batch_size: 2
+gradient_accumulation_steps: 8
+optimizer: adamw_torch_fused
+learning_rate: 1e-5
+lr_scheduler: cosine
+warmup_ratio: 0.05
+
+activation_checkpointing: true
+logging_steps: 10
+saves_per_epoch: 1
+evals_per_epoch: 2

@@ -45,7 +45,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
-from axolotl.utils.distributed import is_xla
+from axolotl.utils.distributed import is_tpu
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.label_dropout import check_label_keep_prob_ids
 from axolotl.utils.logging import get_logger
@@ -492,8 +492,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return bool(self.cfg.streaming or self.cfg.pretraining_dataset)
 
     def _collator_padding_kwargs(self) -> dict:
-        # XLA requires static shapes to avoid recompilation on every batch.
-        if is_xla():
+        # TPU recompiles on every new input shape, so pad every batch to the same length.
+        if is_tpu():
             data_collator_kwargs = {
                 "padding": "max_length",
                 "max_length": self.cfg.sequence_len,

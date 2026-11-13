@@ -1,116 +1,83 @@
 ---
-title: TPU Training (Experimental)
-description: Running Axolotl on Google Cloud TPUs
+title: Google TPU (experimental)
+description: Single-chip fine-tuning on Google Cloud TPUs with TorchTPU
 ---
 
-> **Experimental.** This guide is written ahead of end-to-end TPU testing. Once TPU access is confirmed the experimental caveats will be removed.
+::: {.callout-warning}
+TPU support is experimental and has not yet been validated on TPU hardware. Please report
+results, good or bad, on [issue #3521](https://github.com/axolotl-ai-cloud/axolotl/issues/3521).
+:::
 
-## Prerequisites
+Axolotl runs on Google Cloud TPUs through [TorchTPU](https://github.com/google-pytorch/torch_tpu),
+the native PyTorch backend that replaces the deprecated PyTorch/XLA (`torch_xla`). TorchTPU
+registers a `tpu` device, so the Hugging Face Trainer runs on it without TPU-specific code.
 
-- A Google Cloud TPU VM (v4-8, v5e-8, or v6e-8 recommended for single-host data-parallel training).
-- Python 3.11+ with `torch>=2.13,<2.15` pre-installed (use a TPU Deep Learning VM image).
+## Requirements
+
+- A TPU VM with a TorchTPU-supported chip: v5e, v5p, v6e (Trillium) or v7x (Ironwood).
+- Python 3.12 or newer.
 
 ## Installation
 
-```bash
-pip install "axolotl[tpu]" -f https://storage.googleapis.com/libtpu-releases/index.html
-```
+TorchTPU needs the CPU build of PyTorch. Without the extra index, pip installs the CUDA build.
 
-On a TPU Deep Learning VM the `libtpu` wheel is pre-installed; the find-links flag above provides it for fresh installs.
+```bash
+pip install "axolotl[tpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+```
 
 ## Quick start
 
+Training runs on a single chip, so launch one process:
+
 ```bash
-PJRT_DEVICE=TPU axolotl train examples/tpu/llama-3-1b-lora.yml
+axolotl train examples/tpu/qwen3-0.6b-lora.yml --launcher python
 ```
 
-`axolotl train` detects `torch_xla` at import time and automatically:
+When `torch_tpu` is the active accelerator, Axolotl:
 
-- Passes `--tpu` to `accelerate launch`, which spawns one worker per TPU chip via `xmp.spawn`.
-- Sets `PJRT_DEVICE=TPU` if not already in the environment.
-- Enables bf16 (all current TPU generations support bfloat16 natively).
-- Pads every batch to exactly `sequence_len` so XLA never recompiles on a new shape.
-- Drops the final incomplete batch (`dataloader_drop_last: true`).
+- trains on `tpu:0`, loading the model on the host first;
+- enables bf16 (`bf16: auto` resolves to bf16, `fp16: true` is switched to bf16 with a warning);
+- pads every batch to `sequence_len` and drops the last incomplete batch, so the input shape never changes;
+- skips the automatic Triton LoRA kernels.
 
-## Minimal config
+See `examples/tpu/` for complete LoRA and full fine-tuning configs.
 
-```yaml
-base_model: meta-llama/Llama-3.2-1B-Instruct
-adapter: lora
+## Supported
 
-# TPU-safe attention (eager or sdpa; no flash-attn)
-attn_implementation: sdpa
+- Supervised fine-tuning (SFT) with LoRA or full fine-tuning
+- bf16
+- `attn_implementation: sdpa` or `eager`
+- `activation_checkpointing: true`
+- `axolotl preprocess`
 
-# Precision
-bf16: true
+## Not supported yet
 
-# Static shapes (required on TPU; auto-set, but explicit is clearer)
-pad_to_sequence_len: true
-sequence_len: 2048
+Axolotl rejects these at config validation with an error that names the option.
 
-datasets:
-  - path: tatsu-lab/alpaca
-    type: alpaca
-
-output_dir: ./outputs/lora-tpu
-```
-
-See `examples/tpu/` for complete, ready-to-run configs.
-
-## Supported features
-
-| Feature |
+| Feature | Reason |
 |---|---|
-| SFT |
-| LoRA |
-| Full fine-tuning |
-| bf16 |
-| Data parallel (all chips on one host) |
-| `gradient_checkpointing: true` |
-| Resume from checkpoint |
-| `merge-lora` / `inference` (on CPU) |
-| `preprocess` |
+| Multi-chip training (DDP, FSDP, DeepSpeed, TP/CP/EP) | accelerate does not yet set up the TorchTPU process group ([huggingface/accelerate#4532](https://github.com/huggingface/accelerate/pull/4532)) |
+| QLoRA, 8-bit/4-bit loading, bitsandbytes optimizers | bitsandbytes needs CUDA |
+| Flash attention, xformers | CUDA kernels; use `sdpa` |
+| Sample packing, batch flattening | batch shapes change every step |
+| RL trainers (`rl:`) | SFT only for now |
+| `torch_compile` | not yet validated with TorchTPU's `tpu` compile backend |
+| Liger, Cut Cross Entropy, `lora_*_kernel` | CUDA/Triton kernels |
+| `activation_checkpointing.offload` | relies on CUDA streams |
+| `tf32`, `gpu_memory_limit`, `max_memory` | GPU-only options |
 
-## Not yet supported
+## Known limitations
 
-| Feature | Notes |
-|---|---|
-| QLoRA / bitsandbytes | BnB requires CUDA |
-| Flash Attention | CUDA kernel; use `attn_implementation: sdpa` |
-| DeepSpeed | Not applicable on TPU |
-| FSDP / FSDPv2 | Not in this PR |
-| Sample packing | Dynamic shapes cause recompilation |
-| RL training (DPO, GRPO, …) | Not in this PR |
-| `torch_compile` | XLA is already a compiler |
-| Multi-host TPU pods | Not in this PR |
-| Trainium (AWS) | Separate effort |
-
-Axolotl will raise a clear error at config-validation time if you use an unsupported feature.
-
-## Diagnosing recompilation
-
-The first two training steps always compile. After that, you should see no new compilations. Check with:
-
-```python
-import torch_xla.debug.metrics as met
-print(met.short_metrics_report())
-```
-
-or set `PT_XLA_DEBUG_LEVEL=1` in the environment for per-step logging.
-
-The most common cause of steady-state recompilation is a shape change in the input batch.
-`pad_to_sequence_len: true` (auto-set on TPU) prevents the most common case. If you see
-recompilation, add `PT_XLA_DEBUG_LEVEL=2` and look for `XLAGraph` lines with different shapes.
+- **Resuming from a checkpoint does not restore the TPU RNG state.** The Hugging Face Trainer
+  does not save it yet, so a resumed run is not bit-for-bit reproducible.
+- **Memory usage is not reported** in Axolotl's memory logs or telemetry on TPU.
 
 ## Troubleshooting
 
-**`RuntimeError: No CUDA/mps/npu/xla device found`**: `torch_xla` is not installed, or
-`USE_TORCH_XLA=0` is set. Check `pip show torch_xla` and unset `USE_TORCH_XLA`.
+**Training runs on CPU.** Check that `python -c "import torch; print(torch.accelerator.current_accelerator())"`
+prints `tpu`. If it doesn't, `torch_tpu` is not installed in the active environment.
 
-**`NotImplementedError: qlora is not supported on TPU`**: Switch to `adapter: lora`.
+**`Multi-chip TPU training is not supported yet`.** Axolotl was started with more than one
+process. Use `--launcher python`.
 
-**Slow first steps**: Normal. XLA compiles the computation graph on the first one or two steps;
-subsequent steps are fast.
-
-**`accelerate launch` errors**: Make sure `PJRT_DEVICE=TPU` is set and `torch_xla` is importable.
-Run `python -c "import torch_xla; print(torch_xla.__version__)"` to verify.
+**Slow first steps.** Expect the first steps to be slower while TorchTPU warms up.

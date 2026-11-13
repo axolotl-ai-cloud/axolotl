@@ -871,6 +871,42 @@ def fixture_min_base_cfg():
     )
 
 
+class _FakeTPUDevice:
+    type = "tpu"
+
+    def __str__(self):
+        return self.type
+
+
+@pytest.fixture(name="mock_tpu")
+def fixture_mock_tpu(monkeypatch):
+    """Make TorchTPU the active accelerator on a host without torch_tpu or a TPU.
+
+    Patches the inputs of ``axolotl.utils.distributed.is_tpu`` rather than the helper
+    itself, so every call site runs the real detection.
+    """
+    import importlib.machinery
+    import importlib.util
+
+    import torch
+
+    real_find_spec = importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "torch_tpu":
+            return importlib.machinery.ModuleSpec("torch_tpu", None)
+        return real_find_spec(name, *args, **kwargs)
+
+    def current_accelerator(check_available=False):
+        assert not check_available, "probing availability initializes the TPU runtime"
+        return _FakeTPUDevice()
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr(torch.accelerator, "current_accelerator", current_accelerator)
+    monkeypatch.setattr(torch.accelerator, "device_count", lambda: 8)
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 0)
+
+
 #
 @pytest.mark.skipif(
     os.environ.get("AXOLOTL_IS_CI_CACHE_PRELOAD", "-1") != "1",

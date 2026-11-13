@@ -38,7 +38,6 @@ from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.distributed import (
     barrier,
     broadcast_dict,
-    empty_device_cache,
     gather_scalar_from_all_ranks,
     get_world_size,
     is_distributed,
@@ -894,7 +893,7 @@ class GCCallback(TrainerCallback):
 
     def _gc(self):
         gc.collect()
-        empty_device_cache()
+        torch.cuda.empty_cache()
 
     def on_train_begin(
         self,

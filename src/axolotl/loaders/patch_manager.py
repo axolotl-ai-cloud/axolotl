@@ -43,7 +43,6 @@ from axolotl.utils.activation_checkpointing import (
     offload_placement,
 )
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import empty_device_cache
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -1112,6 +1111,7 @@ class PatchManager:
 
     def _finalize_moe_expert_quantization(self, model: PreTrainedModel):
         """Log quantization results and set model flag for downstream use."""
+        import torch
 
         model._moe_experts_quantized = False
         if self.cfg.quantize_moe_experts:
@@ -1128,7 +1128,7 @@ class PatchManager:
                     "4-bit" if self.cfg.load_in_4bit else "8-bit",
                 )
                 gc.collect()
-                empty_device_cache()
+                torch.cuda.empty_cache()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
