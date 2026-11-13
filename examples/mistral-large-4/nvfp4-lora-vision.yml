@@ -1,4 +1,4 @@
-# 1 x 8 B200: EP=8 over DeepEP (16 of the 128 experts per GPU); dense weights are replicated per GPU (dp_shard_size: 1).
+# 1 x 8 B200: EP=8 over DeepEP (16 of the 128 experts per GPU); dense weights FSDP-shard over the same 8 GPUs (dp_shard_size: 8).
 # SonicMoE keeps the NVFP4 experts packed and trains merge-aware LoRA, so the adapter survives the
 # NVFP4 merge (ordinary expert LoRA rounds away). The FP8 projections dequantize to bf16 at load.
 base_model: mistralai/Mistral-Large-4-1T-A52B-NVFP4
@@ -22,7 +22,7 @@ nvfp4_merge_aware: true
 strict: false
 
 expert_parallel_size: 8
-dp_shard_size: 1
+dp_shard_size: 8
 expert_parallel_backend: deep_ep
 
 # eager / sdpa only: the DSA indexer turns its top-k into an attention mask

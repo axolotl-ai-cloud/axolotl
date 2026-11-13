@@ -68,22 +68,21 @@ def log_mesh_placement(mesh):
         main_process_only=True,
     )
     if "ep" in report:
-        # the config's dp_shard_size is only the extra split inside an EP group; the dense
-        # weights shard over every dp_shard/cp/ep rank, which is easy to misread from the config
+        # this mesh's dp_shard axis is the expert FSDP split inside an EP group; report the
+        # layout in the plan's terms, where dp_shard is the dense FSDP degree
         sizes = {name: size for name, (size, _cross) in report.items()}
-        dense = 1
-        for name in ("dp_shard", "cp", "ep"):
-            dense *= sizes.get(name, 1)
+        efsdp = sizes.get("dp_shard", 1)
+        dp_shard = efsdp * sizes["ep"]
+        cp = sizes.get("cp", 1)
         LOG.info(
-            "effective layout: dense (non-expert) weights FSDP-sharded over %d rank(s) "
-            "(dp_shard x cp x ep = %d x %d x %d); experts EP-sharded %d-way, each rank's "
-            "experts FSDP-split over dp_shard=%d; everything replicated over dp_replicate=%d",
-            dense,
-            sizes.get("dp_shard", 1),
-            sizes.get("cp", 1),
+            "effective layout: dense (non-expert) weights FSDP-sharded over dp_shard x cp = "
+            "%d x %d = %d rank(s); experts EP-sharded %d-way and FSDP-split over efsdp=%d; "
+            "everything replicated over dp_replicate=%d",
+            dp_shard,
+            cp,
+            dp_shard * cp,
             sizes["ep"],
-            sizes["ep"],
-            sizes.get("dp_shard", 1),
+            efsdp,
             sizes.get("dp_replicate", 1),
             main_process_only=True,
         )

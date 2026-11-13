@@ -20,7 +20,7 @@ plugins:
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 expert_parallel_size: 8
 expert_parallel_backend: torch
-dp_shard_size: 1
+dp_shard_size: 8
 
 datasets:
   - path: tatsu-lab/alpaca

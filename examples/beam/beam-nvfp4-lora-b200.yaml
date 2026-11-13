@@ -42,7 +42,7 @@ autotune_profiles:
 autotune_neighborhood: 1
 
 expert_parallel_size: 8
-dp_shard_size: 1
+dp_shard_size: 8
 expert_parallel_backend: deep_ep
 
 chat_template: tokenizer_default

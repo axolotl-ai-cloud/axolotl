@@ -704,6 +704,7 @@ def _ep_topology_worker(rank, world_size, ep_size, dp_shard_size, port, q):
             dp_shard_size=dp_shard_size,
             tensor_parallel_size=1,
             context_parallel_size=1,
+            fsdp_config={"fsdp_version": 2},
         )
         ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
         ep_ranks = sorted(dist.get_process_group_ranks(ep_group))
@@ -747,6 +748,7 @@ def _ep_topology_worker_expects_error(
             dp_shard_size=dp_shard_size,
             tensor_parallel_size=1,
             context_parallel_size=1,
+            fsdp_config={"fsdp_version": 2},
         )
         err = None
         try:
@@ -775,6 +777,7 @@ def _ep_cp_topology_worker(rank, world_size, ep_size, cp_size, dp_shard_size, po
             dp_shard_size=dp_shard_size,
             tensor_parallel_size=1,
             context_parallel_size=cp_size,
+            fsdp_config={"fsdp_version": 2},
         )
         ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
         ep_ranks = sorted(dist.get_process_group_ranks(ep_group))
@@ -938,17 +941,15 @@ class TestMeshTopology:
         """ep<world without dp_shard filling the rest must raise (product mismatch)."""
         results = self._spawn_expects_error(ep_size=2, dp_shard_size=1)
         for rank, err in results:
-            assert err is not None, (
-                f"rank {rank} did not raise; expected product mismatch"
-            )
-            assert "must equal" in err.lower() or "world_size" in err.lower(), err
+            assert err is not None, f"rank {rank} did not raise; expected PLAN-001"
+            assert "PLAN-001" in err, err
 
     def test_mesh_axis_product_mismatch_raises(self):
-        """world=4 with ep=2*dp=4 (product 8 != 4) raises clearly."""
-        results = self._spawn_expects_error(ep_size=2, dp_shard_size=4)
+        """world=4 with dp_shard_size=8 fits neither the dense nor the legacy spelling."""
+        results = self._spawn_expects_error(ep_size=2, dp_shard_size=8)
         for rank, err in results:
             assert err is not None, f"rank {rank} did not raise"
-            assert "must equal" in err.lower() or "world_size" in err.lower(), err
+            assert "PLAN-001" in err, err
 
 
 class TestExpertLoraSlicing:

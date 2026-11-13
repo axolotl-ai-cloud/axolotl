@@ -24,7 +24,7 @@ autotune_neighborhood: 1
 # over the same axis. dp_shard_size: 8 without expert parallelism also works and is
 # ~40% slower here, since every rank then dequantizes every expert its tokens hit.
 expert_parallel_size: 8
-dp_shard_size: 1
+dp_shard_size: 8
 expert_parallel_backend: deep_ep
 # chunked-dequant grouped_mm experts (64 of the 256 experts dequantized per chunk); the
 # selective-dequant scatter2scatter default (moe_bnb_fast) faults on these experts
