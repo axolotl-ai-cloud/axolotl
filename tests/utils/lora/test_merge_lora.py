@@ -4353,3 +4353,34 @@ def test_efficient_merge_matches_keys_saved_without_base_model_prefix(tmp_path):
     )
     for key in expected:
         torch.testing.assert_close(merged[key], expected[key])
+
+
+def test_base_model_prefix_rule_composes_after_other_renamings():
+    from torch import nn
+
+    from axolotl.cli.utils.lora_merge import (
+        _base_model_prefix_renaming,
+        _renamed_key_candidates,
+    )
+
+    class _Head(nn.Module):
+        base_model_prefix = "model"
+
+        def __init__(self):
+            super().__init__()
+            self.model = nn.Module()
+            self.model.language_model = nn.Linear(1, 1)
+            self.lm_head = nn.Linear(1, 1)
+
+    renamings = {
+        r"^language_model\.model": "model.language_model",
+        **_base_model_prefix_renaming(_Head()),
+    }
+    # a renamed key must not gain a stray prefix-only spelling after its composed one
+    assert (
+        _runtime_key("language_model.model.norm.weight", renamings, {})
+        == "model.language_model.norm.weight"
+    )
+    assert _renamed_key_candidates("language_model.layers.0", renamings) == [
+        "model.language_model.layers.0"
+    ]

@@ -278,6 +278,10 @@ def _plan_trainable_token_merges(
     return plan
 
 
+class _ComposeOnlyPattern(str):
+    """A renaming applied only after the others, never as a candidate of its own."""
+
+
 def _renamed_key_candidates(
     clean_key: str, weight_renamings: Optional[Dict[str, str]]
 ) -> list[str]:
@@ -295,7 +299,8 @@ def _renamed_key_candidates(
         composed = key
         for src_pattern, tgt_pattern in weight_renamings.items():
             renamed = re.sub(src_pattern, tgt_pattern, key).removesuffix(".")
-            if renamed != clean_key and renamed not in candidates:
+            compose_only = isinstance(src_pattern, _ComposeOnlyPattern)
+            if not compose_only and renamed != clean_key and renamed not in candidates:
                 candidates.append(renamed)
             composed = re.sub(src_pattern, tgt_pattern, composed)
         composed = composed.removesuffix(".")
@@ -2579,7 +2584,7 @@ def _base_model_prefix_renaming(meta_model) -> Dict[str, str]:
     if not children:
         return {}
     alternation = "|".join(re.escape(name) for name in children)
-    return {rf"^(?=(?:{alternation})\.)": f"{prefix}."}
+    return {_ComposeOnlyPattern(rf"^(?=(?:{alternation})\.)"): f"{prefix}."}
 
 
 def _scope_renaming(
