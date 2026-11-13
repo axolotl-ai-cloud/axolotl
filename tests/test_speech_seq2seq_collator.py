@@ -169,7 +169,7 @@ def test_features_cast_to_compute_dtype(make_collator):
 @pytest.mark.parametrize("orig_sr", [8000, 44100])
 @pytest.mark.parametrize("source", ["array", "stereo_array", "bytes", "path"])
 def test_load_audio_sources(tmp_path, orig_sr, source):
-    # 22051 samples at 44.1 kHz resample to a fractional 8000.5
+    # 22051 samples at 44.1 kHz resample to 8000.36, which librosa rounds up
     mono = _tone(0.50003, orig_sr)
     stereo = np.stack([mono, mono], axis=1)
     if source in ("bytes", "path"):
