@@ -19,7 +19,7 @@ output_dir: ./outputs/tpu-qwen3-fft
 num_epochs: 1
 micro_batch_size: 2
 gradient_accumulation_steps: 8
-optimizer: adamw_torch_fused
+optimizer: adamw_torch
 learning_rate: 1e-5
 lr_scheduler: cosine
 warmup_ratio: 0.05

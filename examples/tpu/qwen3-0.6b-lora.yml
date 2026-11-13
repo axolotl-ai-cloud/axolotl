@@ -29,7 +29,7 @@ output_dir: ./outputs/tpu-qwen3-lora
 num_epochs: 1
 micro_batch_size: 4
 gradient_accumulation_steps: 4
-optimizer: adamw_torch_fused
+optimizer: adamw_torch
 learning_rate: 2e-4
 lr_scheduler: cosine
 warmup_ratio: 0.05
