@@ -1,4 +1,4 @@
-# Sharded LoRA adapter checkpoints on Qwen3.5-35B-A3B under FSDP2 + EP=8 (dp_shard_size 1) on
+# Sharded LoRA adapter checkpoints on Qwen3.5-35B-A3B under FSDP2 + EP=8 (dp_shard_size 8) on
 # one 8xB200 node: attention + routed-expert LoRA plus trained lm_head / embed_tokens copies
 # (modules_to_save), bf16, no quantization.
 #
@@ -23,7 +23,7 @@ plugins:
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 expert_parallel_size: 8
 expert_parallel_backend: torch
-dp_shard_size: 1
+dp_shard_size: 8
 
 datasets:
   - path: tatsu-lab/alpaca

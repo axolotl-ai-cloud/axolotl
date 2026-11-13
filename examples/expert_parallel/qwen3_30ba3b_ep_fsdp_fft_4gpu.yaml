@@ -1,9 +1,9 @@
 base_model: Qwen/Qwen3-30B-A3B-Instruct-2507
 
 experts_implementation: grouped_mm
-# world size 4 minimum: expert_parallel_size x dp_shard_size
+# 4 GPUs: dense weights FSDP-shard 4 ways; experts EP-shard 2 ways and FSDP-split over the 2 EP groups
 expert_parallel_size: 2
-dp_shard_size: 2
+dp_shard_size: 4
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test

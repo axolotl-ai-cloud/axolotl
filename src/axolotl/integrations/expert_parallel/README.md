@@ -170,12 +170,12 @@ fsdp_config:
   state_dict_type: FULL_STATE_DICT
 ```
 
-For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_shard_size`. The product must equal `world_size`:
+`dp_shard_size` is the dense FSDP degree (transformers' `fsdp_size`); `dp_replicate_size × dp_shard_size × context_parallel_size` must equal `world_size`, and an unset `dp_shard_size` takes the ranks the other degrees leave. EP regroups the `dp_shard_size` ranks rather than adding a factor, so `expert_parallel_size` must divide `dp_shard_size`: each group of `expert_parallel_size` consecutive ranks holds one full set of experts, split across its ranks, and each expert slice is FSDP-split across the `dp_shard_size / expert_parallel_size` groups (transformers' `efsdp_size`):
 
 ```yaml
-# 4-GPU example: ep × dp_shard = 2 × 2 = 4
+# 4 GPUs: dense weights FSDP-sharded 4 ways, experts EP-sharded 2 ways and FSDP-split 2 ways
 expert_parallel_size: 2
-dp_shard_size: 2
+dp_shard_size: 4  # or leave unset
 fsdp_version: 2
 fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
@@ -184,7 +184,9 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
-Full-parameter training works with either layout. At 2 GPUs (`expert_parallel_size` equal to the world size, so no `dp_shard` axis) the dense parameters FSDP-shard across the whole world while the trainable experts are wrapped on a per-rank mesh, so every parameter is a DTensor and fused/foreach optimizers and gradient clipping see one kind of tensor. The expert combine sums gradients over the ranks that sent tokens where FSDP averages, so the experts' reduce-scatter is divided by `ep × dp_shard`; the full state dict gathers the experts across the EP axis before rank 0 writes, so the saved model carries every expert.
+Earlier releases read `dp_shard_size` under EP as the split inside an EP group, with `expert_parallel_size` as a separate factor of the world size (`ep × dp_shard = world`, so `dp_shard_size: 2` in the example above). That spelling still loads, resolves to the same layout and logs a deprecation warning with the rewritten value (the old `dp_shard_size` times `expert_parallel_size`); it will be removed in a future release. A `dp_shard_size` that fits neither spelling fails at config load with a suggested value instead of at `Accelerator` creation after the model has loaded.
+
+Full-parameter training works with either layout. At 2 GPUs (`expert_parallel_size` equal to the world size, so experts are not FSDP-split) the dense parameters FSDP-shard across the whole world while the trainable experts are wrapped on a per-rank mesh, so every parameter is a DTensor and fused/foreach optimizers and gradient clipping see one kind of tensor. The expert combine sums gradients over the ranks that sent tokens where FSDP averages, so the experts' reduce-scatter is divided by the dense `dp_shard` degree (`ep × dp_shard` in the old spelling); the full state dict gathers the experts across the EP axis before rank 0 writes, so the saved model carries every expert.
 
 See full example configs at [`examples/expert_parallel/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel).
 

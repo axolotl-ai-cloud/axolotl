@@ -17,9 +17,9 @@ strict: false
 attn_implementation: sdpa
 
 # Pure EP with DeepEP: install the deep_ep package for the NVLink dispatch path.
-# Set expert_parallel_size to the total GPU count (256 must divide it evenly), dp_shard_size 1.
+# Set expert_parallel_size to the total GPU count (256 must divide it evenly) and leave dp_shard_size
+# unset: it resolves to the GPU count, so the dense weights FSDP-shard over the same GPUs.
 expert_parallel_size: 8                      # = total GPU count (8 for 8xH100; 2 for 2xB200)
-dp_shard_size: 1
 expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
 # Caps tokens per expert to guard the DeepEP NVLink combine (it hangs if an expert exceeds the buffer).
 # The 1M default is effectively off at normal lengths; lower it toward the hang threshold for long context (>=64k).
