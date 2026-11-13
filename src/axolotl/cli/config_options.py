@@ -2490,7 +2490,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--float32/--no-float32",),
         None,
         None,
-        None,
+        "Load and keep the weights, and so the optimizer's master weights, in FP32. Autocast stays explicit: with `bf16: true` (or `fp16: true`) compute runs in that dtype on FP32 masters; with `bf16` unset or `auto` training runs in pure FP32 without autocast (flash attention and cut cross entropy then refuse the config). Contradicts `bfloat16`/`float16`. BF16 masters stay the default; FP32 masters cost memory (Qwen3-30B-A3B full fine-tune, EP8 on 8xB200: 65.1 vs 43.7 GiB peak allocated per rank).",
     ),
     (
         ("--activation-checkpointing.enabled/--no-activation-checkpointing.enabled",),
