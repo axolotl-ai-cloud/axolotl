@@ -149,7 +149,7 @@ class SpeechSeq2SeqCollator:
             if len(text_ids) > max_text_len:
                 self._warn_once(
                     "truncate",
-                    f"Truncating transcripts to {max_text_len} tokens to fit "
+                    f"Truncating transcripts to {max_text_len + 1} tokens to fit "
                     f"sequence_len={self.max_decoder_len} with the decoder prompt.",
                 )
                 # the audio continues past the cut, so do not teach the model to stop here
