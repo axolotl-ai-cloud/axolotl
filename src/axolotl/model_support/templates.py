@@ -61,11 +61,14 @@ def _validate_speech_seq2seq(context: ModelHookContext) -> None:
             "Set `asr.language` (or `asr.language_column` for per-row codes); the "
             "decoder prompt needs the transcript language."
         )
-    # Paths that need tokenized text batches or a different trainer.
+    # Paths that assume tokenized text batches or a decoder-only model.
     for key in (
         "sample_packing",
         "group_by_length",
         "generate_samples",
+        "do_causal_lm_eval",
+        "do_bench_eval",
+        "eval_table_size",
         "rl",
         "reward_model",
         "process_reward_model",
