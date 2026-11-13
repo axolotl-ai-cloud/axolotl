@@ -13,6 +13,7 @@ from transformers.utils.import_utils import (
     is_torch_cuda_available,
     is_torch_mps_available,
     is_torch_npu_available,
+    is_torch_xpu_available,
 )
 
 distributed_state = None
@@ -22,6 +23,8 @@ def get_device_type() -> torch.device:
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
+    elif is_torch_xpu_available():
+        device = torch.device("xpu")
     elif is_torch_mps_available():
         device = torch.device("mps")
     elif is_torch_npu_available():
@@ -33,6 +36,8 @@ def get_device_count() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.device_count()
+    if "xpu" in str(cur_device):
+        return torch.xpu.device_count()
     if "npu" in str(cur_device):
         return torch.npu.device_count()
     return 1
@@ -42,6 +47,8 @@ def get_current_device() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.current_device()
+    if "xpu" in str(cur_device):
+        return torch.xpu.current_device()
     if "npu" in str(cur_device):
         return torch.npu.current_device()
     return 0
