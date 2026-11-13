@@ -644,3 +644,43 @@ class TestRuntimeLifecycle:
         plugin.post_model_load(cfg, torch.nn.Linear(2, 2))
         assert nvfp4_lora.get_state() is None
         plugin.post_train_unload(cfg)
+
+
+class TestEfficientLoadingMetaMove:
+    """cpu_ram_efficient_loading moves the model to meta before FSDP wrapping and refills it
+    from rank 0; the frozen packed experts are this rank's EP slice outside FSDP, so they
+    must skip that round trip."""
+
+    def test_frozen_experts_stay_real(self, monkeypatch):
+        monkeypatch.setattr(nvfp4_lora, "active", lambda: True)
+        model = _nvfp4_model()
+        experts = model.mlp.experts
+        gate_up, down = experts.gate_up_proj, experts.down_proj
+        kept = nvfp4_lora.detach_frozen_experts(model)
+        assert {attr for _m, attr, _p in kept} == {"gate_up_proj", "down_proj"}
+        model = model.to(torch.device("meta"))
+        nvfp4_lora.reattach_frozen_experts(kept)
+        assert experts.gate_up_proj is gate_up and experts.down_proj is down
+        assert not gate_up.is_meta and not down.is_meta
+        assert all(
+            p.is_meta
+            for n, p in model.named_parameters()
+            if not n.endswith(("experts.gate_up_proj", "experts.down_proj"))
+        )
+
+    def test_nothing_detached_without_nvfp4_lora(self, monkeypatch):
+        monkeypatch.setattr(nvfp4_lora, "active", lambda: False)
+        assert nvfp4_lora.detach_frozen_experts(_nvfp4_model()) == []
+
+    def test_meta_experts_before_wrapping_raise(self, monkeypatch):
+        monkeypatch.setattr(nvfp4_lora, "active", lambda: True)
+        model = _nvfp4_model()
+        experts = model.mlp.experts
+        experts.gate_up_proj = torch.nn.Parameter(
+            torch.Tensor._make_subclass(
+                _FakeNVFP4Tensor, torch.empty(EXPERTS, 2 * INTER, HIDDEN, device="meta")
+            ),
+            requires_grad=False,
+        )
+        with pytest.raises(RuntimeError, match="on meta before FSDP wrapping"):
+            nvfp4_lora.detach_frozen_experts(model)

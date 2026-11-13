@@ -106,6 +106,34 @@ def expert_params(experts) -> set[torch.nn.Parameter]:
     return {getattr(experts, _GATE_UP), getattr(experts, _DOWN)}
 
 
+def detach_frozen_experts(model) -> list[tuple]:
+    """Pop the frozen packed NVFP4 expert params (this rank's EP slice, kept outside FSDP) off
+    their modules so a whole-model ``to("meta")`` for cpu_ram_efficient_loading leaves them
+    real. Returns ``(module, attr, param)`` for :func:`reattach_frozen_experts`."""
+    if not active():
+        return []
+    from .shard import _detect_experts_modules
+
+    detached = []
+    for _name, experts in _detect_experts_modules(model):
+        for attr in (_GATE_UP, _DOWN):
+            param = experts._parameters.get(attr)
+            if param is None or not is_nvfp4_tensor(param) or param.requires_grad:
+                continue
+            if param.is_meta:
+                raise RuntimeError(
+                    f"nvfp4_lora: {attr} of {_name} is on meta before FSDP wrapping; the "
+                    "expert-parallel scatter should have given every rank its packed slice"
+                )
+            detached.append((experts, attr, experts._parameters.pop(attr)))
+    return detached
+
+
+def reattach_frozen_experts(detached: list[tuple]) -> None:
+    for module, attr, param in detached:
+        module._parameters[attr] = param
+
+
 def move_frozen_experts(experts, device_type: str = "cuda") -> int:
     """Put the frozen expert params on the accelerator in place (FSDP moves only the params
     it manages, and the EP scatter leaves them on the loader's device). Returns the count moved."""
