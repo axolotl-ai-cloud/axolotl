@@ -214,3 +214,26 @@ def test_dataset_load_skips_decoding_and_filters_clip_lengths(tokenizer):
     assert loaded.features["audio"].decode is False
     assert loaded["text"] == ["hi"]
     assert loaded[0]["audio"]["bytes"] == clips[0]["bytes"]
+
+
+@enable_hf_offline
+@pytest.mark.parametrize(
+    "asr, match",
+    [
+        ({"text_column": "transcript"}, "no column"),
+        ({"language_column": "lng"}, "no column"),
+        ({"language": "english"}, "Unsupported language"),
+        ({"language_column": "lang"}, "Unsupported language: 'English'"),
+    ],
+)
+def test_dataset_load_rejects_bad_asr_columns_and_languages(tokenizer, asr, match):
+    from datasets import Dataset
+
+    from axolotl.utils.collators.speech_seq2seq import filter_audio_lengths
+
+    rows = [_row("hi", lang="en"), _row("hello", lang="English")]
+    cfg = DictDefault(
+        base_model=MIRROR, asr=DictDefault({"language": "en", **asr}), sequence_len=448
+    )
+    with pytest.raises(ValueError, match=match):
+        filter_audio_lengths(Dataset.from_list(rows), cfg, tokenizer)

@@ -120,10 +120,10 @@ class SpeechSeq2SeqCollator:
             LOG.warning(message)
 
     def _prompt_ids(self, row: dict) -> list[int]:
-        language = (
-            row.get(self.language_column) if self.language_column else None
-        ) or self.language
-        if not language:
+        language = row.get(self.language_column) if self.language_column else None
+        if language is None:
+            language = self.language
+        if language is None:
             raise ValueError(
                 "No language for this row: set `asr.language` or provide a value in "
                 "`asr.language_column`."
@@ -250,6 +250,21 @@ def filter_audio_lengths(
 ) -> Dataset | IterableDataset:
     """Drop clips the collator would skip, so no batch can end up empty."""
     collator = build_speech_seq2seq_collator(cfg, tokenizer, is_eval=False)
+    columns = dataset.column_names
+    if columns is not None:
+        wanted = (collator.audio_column, collator.text_column, collator.language_column)
+        missing = [col for col in wanted if col and col not in columns]
+        if missing:
+            raise ValueError(
+                f"Dataset has no column(s) {missing} named in `asr`; it has {columns}."
+            )
+    # surface unsupported language codes now rather than at the first batch
+    if collator.language is not None:
+        collator._prompt_ids({})
+    if collator.language_column and isinstance(dataset, Dataset):
+        for language in dataset.unique(collator.language_column):
+            collator._prompt_ids({collator.language_column: language})
+
     fn_kwargs = {
         "column": collator.audio_column,
         "sampling_rate": collator.sampling_rate,
