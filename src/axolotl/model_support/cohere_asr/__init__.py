@@ -57,18 +57,6 @@ class CohereAsrSupport(ModelSupport):
     """Descriptor for Cohere Transcribe."""
 
     model_types = ("cohere_asr",)
-
-    @staticmethod
-    def resolve_lora_merge_method(cfg, requested: str) -> str:
-        """Merge through from_pretrained, which renames the hub's NeMo-style keys."""
-        del cfg
-        if requested == "memory_efficient":
-            raise ValueError(
-                "cohere_asr requires merge_method: legacy; the hub checkpoint uses "
-                "NeMo key names that memory_efficient merging cannot match."
-            )
-        return "legacy"
-
     profile = ModelProfile(
         family=SPEECH_SEQ2SEQ,
         matchers=ModelMatchers(processor=_matches_processor),

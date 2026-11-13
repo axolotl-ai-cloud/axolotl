@@ -706,12 +706,6 @@ class TestCohereAsrSupport:
         assert "proj_out" in nf4_skip_modules("cohere_asr", {})
         assert bnb_4bit_skip_modules("cohere_asr") == ["proj_out"]
 
-    def test_lora_merge_uses_legacy(self):
-        support = get_model_support("cohere_asr")
-        assert support.resolve_lora_merge_method(DictDefault(), None) == "legacy"
-        with pytest.raises(ValueError, match="merge_method: legacy"):
-            support.resolve_lora_merge_method(DictDefault(), "memory_efficient")
-
     def test_peft_task_type_is_none(self):
         from axolotl.loaders.adapter import _get_peft_task_type
 
