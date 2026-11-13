@@ -156,6 +156,70 @@ def _resolve_config_class(name: str) -> type:
     return getattr(importlib.import_module(module_name), class_name)
 
 
+def modelopt_hf_quant_config(model_name: str, config_kwargs: dict) -> dict | None:
+    """The ``quantization_config`` a modelopt export records only in ``hf_quant_config.json``.
+
+    Older modelopt exports (e.g. ``nvidia/Qwen3-235B-A22B-NVFP4``, modelopt 0.33) leave
+    ``config.json`` without ``quantization_config``; newer ones write the same metadata in
+    both files. Without it the checkpoint's packed weights load against an unquantized skeleton
+    and fail with size mismatches."""
+    import json
+
+    from transformers.utils import cached_file
+
+    try:
+        path = cached_file(
+            model_name,
+            "hf_quant_config.json",
+            revision=config_kwargs.get("revision"),
+            _raise_exceptions_for_missing_entries=False,
+            _raise_exceptions_for_connection_errors=False,
+        )
+    except (OSError, ValueError):
+        return None
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as handle:
+        exported = json.load(handle)
+    quantization = exported.get("quantization") or {}
+    producer = exported.get("producer") or {}
+    if producer.get("name") != "modelopt" or not quantization.get("quant_algo"):
+        return None
+    group_size = quantization.get("group_size", 16)
+    if quantization["quant_algo"] == "NVFP4":
+        spec = {
+            "dynamic": False,
+            "num_bits": 4,
+            "type": "float",
+            "group_size": group_size,
+        }
+        groups = {
+            "group_0": {
+                "input_activations": dict(spec),
+                "weights": dict(spec),
+                "targets": ["Linear"],
+            }
+        }
+    else:
+        groups = {}
+    config = {
+        "config_groups": groups,
+        "ignore": list(quantization.get("exclude_modules") or []),
+        "quant_algo": quantization["quant_algo"],
+        "producer": producer,
+        "quant_method": "modelopt",
+    }
+    if quantization.get("kv_cache_quant_algo") == "FP8":
+        config["kv_cache_scheme"] = {"dynamic": False, "num_bits": 8, "type": "float"}
+    LOG.info(
+        "%s: config.json has no quantization_config; using modelopt %s metadata from "
+        "hf_quant_config.json",
+        model_name,
+        quantization["quant_algo"],
+    )
+    return config
+
+
 def load_model_config(cfg: DictDefault) -> PretrainedConfig:
     """Loads and configures a model configuration from HuggingFace or local sources.
 
@@ -216,6 +280,11 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig:
             trust_remote_code=trust_remote_code,
             **config_kwargs,
         )
+
+    if getattr(model_config, "quantization_config", None) is None:
+        quantization_config = modelopt_hf_quant_config(model_config_name, config_kwargs)
+        if quantization_config is not None:
+            model_config.quantization_config = quantization_config
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():
