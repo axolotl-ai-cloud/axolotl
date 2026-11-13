@@ -43,14 +43,18 @@ def _speech_seq2seq_collator_factory(cfg: Any, tokenizer: Any, is_eval: bool) ->
     return build_speech_seq2seq_collator(cfg, tokenizer, is_eval)
 
 
+def _refuse_speech_seq2seq_inference(context: ModelHookContext) -> None:
+    if context.inference:
+        raise ValueError(
+            "axolotl inference does not support speech seq2seq "
+            f"model_type={context.cfg.model_config_type}; transcribe with the processor "
+            "and model.generate() instead."
+        )
+
+
 def _validate_speech_seq2seq(context: ModelHookContext) -> None:
     cfg = context.cfg
     model_type = cfg.model_config_type
-    if context.inference:
-        raise ValueError(
-            f"axolotl inference does not support speech seq2seq model_type={model_type}; "
-            "transcribe with the processor and model.generate() instead."
-        )
     if find_spec("librosa") is None or find_spec("soundfile") is None:
         raise ImportError(
             "Speech seq2seq training requires the audio extra: "
@@ -166,6 +170,8 @@ SPEECH_SEQ2SEQ = ModelFamilyTemplate(
     hooks=ModelHooks(
         by_phase={
             ModelHookPhase.CONFIGURE_RUN: (_validate_speech_seq2seq,),
+            # the inference flag is only known once a model load starts
+            ModelHookPhase.BEFORE_MODEL_BUILD: (_refuse_speech_seq2seq_inference,),
             ModelHookPhase.AFTER_ADAPTER_LOAD: (_freeze_batchnorm_stats,),
         }
     ),

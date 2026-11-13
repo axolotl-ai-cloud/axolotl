@@ -684,9 +684,19 @@ class TestCohereAsrSupport:
             self._cfg(sequence_len=1024, attn_implementation="sdpa", asr=asr)
         )
 
-    def test_configure_run_refuses_inference(self):
+    def test_model_build_refuses_inference(self):
+        context = ModelHookContext(cfg=self._cfg(), inference=True)
         with pytest.raises(ValueError, match="does not support"):
-            self._run_configure(self._cfg(), inference=True)
+            run_model_support_hooks(
+                get_model_support("cohere_asr"),
+                ModelHookPhase.BEFORE_MODEL_BUILD,
+                context,
+            )
+        run_model_support_hooks(
+            get_model_support("cohere_asr"),
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            ModelHookContext(cfg=self._cfg(), inference=False),
+        )
 
     def test_configure_run_requires_audio_extra(self, monkeypatch):
         monkeypatch.setattr(
