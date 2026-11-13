@@ -3,6 +3,7 @@ features and teacher-forced decoder targets."""
 
 import importlib
 import io
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,7 +64,8 @@ def audio_num_samples(audio: Any, sampling_rate: int) -> int:
             audio = io.BytesIO(audio)
         info = soundfile.info(audio)
         num_samples, orig_sr = info.frames, info.samplerate
-    return round(num_samples * sampling_rate / orig_sr)
+    # librosa.resample rounds the output length up
+    return math.ceil(num_samples * sampling_rate / orig_sr)
 
 
 def _within(num_samples: int, bounds: tuple[int, int | None]) -> bool:

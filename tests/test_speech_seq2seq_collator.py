@@ -13,6 +13,7 @@ soundfile = pytest.importorskip("soundfile")
 from axolotl.utils.collators import speech_seq2seq  # noqa: E402
 from axolotl.utils.collators.core import IGNORE_INDEX  # noqa: E402
 from axolotl.utils.collators.speech_seq2seq import (  # noqa: E402
+    audio_num_samples,
     build_speech_seq2seq_collator,
     load_audio,
 )
@@ -168,7 +169,8 @@ def test_features_cast_to_compute_dtype(make_collator):
 @pytest.mark.parametrize("orig_sr", [8000, 44100])
 @pytest.mark.parametrize("source", ["array", "stereo_array", "bytes", "path"])
 def test_load_audio_sources(tmp_path, orig_sr, source):
-    mono = _tone(0.5, orig_sr)
+    # 22051 samples at 44.1 kHz resample to a fractional 8000.5
+    mono = _tone(0.50003, orig_sr)
     stereo = np.stack([mono, mono], axis=1)
     if source in ("bytes", "path"):
         wav = tmp_path / "clip.wav"
@@ -185,6 +187,7 @@ def test_load_audio_sources(tmp_path, orig_sr, source):
     decoded = load_audio(audio, SR)
     expected = librosa.resample(mono, orig_sr=orig_sr, target_sr=SR)
     assert decoded.ndim == 1
+    assert audio_num_samples(audio, SR) == len(decoded)
     np.testing.assert_allclose(decoded, expected, atol=1e-5)
 
 
