@@ -86,7 +86,8 @@ def test_cohere_asr_lora_train(tiny_model_dir, audio_parquet, tmp_path):
             "adapter": "lora",
             "lora_r": 4,
             "lora_alpha": 8,
-            "lora_target_linear": True,
+            # attention only: a subsampling LoRA would hide lost encoder grads under reentrant
+            "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
             "activation_checkpointing": True,
             "val_set_size": 0,
             "max_steps": 2,
@@ -108,5 +109,6 @@ def test_cohere_asr_lora_train(tiny_model_dir, audio_parquet, tmp_path):
     assert math.isfinite(trainer.state.log_history[-1]["train_loss"])
     adapter = load_file(output_dir / "adapter_model.safetensors")
     # any, not all: on a random tiny model some cross-attn LoRA can see ~0 gradient in 2 steps
-    assert any(v.any() for k, v in adapter.items() if "lora_B" in k)
+    for side in (".encoder.", ".decoder."):
+        assert any(v.any() for k, v in adapter.items() if "lora_B" in k and side in k)
     assert (output_dir / "processor_config.json").exists()
