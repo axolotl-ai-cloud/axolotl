@@ -70,6 +70,7 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
     init_distributed_state,
+    is_tpu,
 )
 from axolotl.utils.fp32_norms import (
     _matches_norm_class,
@@ -937,7 +938,12 @@ class ModelLoader:
         ):
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
-        if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
+        # A single TPU process sees every chip on the host but trains on one.
+        if (
+            not is_tpu()
+            and get_device_count() > 1
+            and int(os.getenv("WORLD_SIZE", "1")) == 1
+        ):
             self.model.is_parallelizable = True
             self.model.model_parallel = True
 

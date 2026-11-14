@@ -34,6 +34,7 @@ from axolotl.utils.activation_checkpointing import (
 )
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_tpu, set_accelerate_tpu_device
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DPODataset,
@@ -131,6 +132,20 @@ def _model_with_inherited_default_fallback(model_cls, data):
 
 
 def choose_device(cfg):
+    if is_tpu():
+        if (cfg.world_size or 1) > 1:
+            raise NotImplementedError(
+                "Multi-chip TPU training is not supported yet: accelerate does not set up "
+                "the TorchTPU process group (see huggingface/accelerate#4532). Run a single "
+                "process, e.g. `axolotl train config.yml --launcher python`."
+            )
+        cfg.device = "tpu:0"
+        set_accelerate_tpu_device()
+        # accelerate's device_map planner does not see TPU memory and would place every
+        # layer on CPU; load on host and let the Trainer move the model to the chip.
+        cfg.device_map = None
+        return
+
     def get_device():
         try:
             if torch.cuda.is_available():
@@ -171,7 +186,7 @@ def resolve_dtype(cfg):
     if (
         not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
-        if is_torch_bf16_gpu_available():
+        if is_tpu() or is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
         else:
@@ -183,7 +198,13 @@ def resolve_dtype(cfg):
     if cfg.fp16 and cfg.bf16 == "auto":
         cfg.bf16 = False
 
-    if cfg.device == "mps":
+    if str(cfg.device).startswith("tpu"):
+        cfg.tf32 = False
+        if cfg.fp16:
+            LOG.warning("fp16 is not supported on TPU; switching to bf16.")
+            cfg.fp16 = False
+            cfg.bf16 = True
+    elif cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
         if cfg.bf16 and cfg.fp16 is not False:

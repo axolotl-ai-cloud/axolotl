@@ -148,6 +148,9 @@ opentelemetry = [
     "prometheus-client",
 ]
 kernels-curated = ["kernels[curated]"]
+# torch_tpu needs the CPU build of torch: install with
+#   --extra-index-url https://download.pytorch.org/whl/cpu
+tpu = ["torch_tpu>=0.2.0"]
 
 [dependency-groups]
 dev = [
@@ -320,6 +323,15 @@ conflicts = [
     [
         { package = "axolotl" },
         { extra = "llmcompressor" },
+    ],
+    # TPU has no CUDA runtime for these GPU-only extras.
+    [
+        { extra = "tpu" },
+        { extra = "vllm" },
+    ],
+    [
+        { extra = "tpu" },
+        { extra = "deepspeed" },
     ],
 ]
 

@@ -1,5 +1,7 @@
 """Utilities for distributed functionality."""
 
+import functools
+import importlib.util
 import os
 import pickle  # nosec
 from contextlib import contextmanager
@@ -29,7 +31,28 @@ LOG = get_logger(__name__)
 distributed_state = None
 
 
+@functools.cache
+def is_tpu() -> bool:
+    """Return True when TorchTPU (``torch_tpu``) is the active accelerator.
+
+    Uses the compile-time accelerator check, which does not initialize the TPU
+    runtime: a probe in the ``axolotl train`` parent process would hold the chip
+    and starve the training process.
+    """
+    if importlib.util.find_spec("torch_tpu") is None:
+        return False
+    accelerator = torch.accelerator.current_accelerator()
+    return accelerator is not None and accelerator.type == "tpu"
+
+
+def set_accelerate_tpu_device():
+    # accelerate's default_device has no TPU branch and would fall back to CPU.
+    os.environ.setdefault("ACCELERATE_TORCH_DEVICE", "tpu:0")
+
+
 def get_device_type() -> torch.device:
+    if is_tpu():
+        return torch.accelerator.current_accelerator()
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
@@ -41,6 +64,8 @@ def get_device_type() -> torch.device:
 
 
 def get_device_count() -> int:
+    if is_tpu():
+        return torch.accelerator.device_count()
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.device_count()
@@ -50,6 +75,8 @@ def get_device_count() -> int:
 
 
 def get_current_device() -> int:
+    if is_tpu():
+        return torch.accelerator.current_device_index()
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.current_device()
@@ -82,6 +109,8 @@ def init_distributed_state():
     global distributed_state
     if distributed_state is not None:
         return
+    if is_tpu():
+        set_accelerate_tpu_device()
     from axolotl.utils.logging import get_logger
 
     log = get_logger(__name__)

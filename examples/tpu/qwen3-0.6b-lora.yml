@@ -1,0 +1,40 @@
+base_model: Qwen/Qwen3-0.6B
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+# The LoRA kernels are Triton-only; they are not auto-enabled on TPU.
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
+# Flash attention needs CUDA.
+attn_implementation: sdpa
+bf16: true
+
+# On TPU every batch is padded to sequence_len so the graph keeps one shape.
+# Axolotl sets this automatically; it is spelled out here for clarity.
+sequence_len: 1024
+pad_to_sequence_len: true
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+val_set_size: 0.01
+dataset_prepared_path: ./data/tpu-qwen3-lora
+output_dir: ./outputs/tpu-qwen3-lora
+
+num_epochs: 1
+micro_batch_size: 4
+gradient_accumulation_steps: 4
+optimizer: adamw_torch
+learning_rate: 2e-4
+lr_scheduler: cosine
+warmup_ratio: 0.05
+
+activation_checkpointing: true
+logging_steps: 10
+saves_per_epoch: 1
+evals_per_epoch: 2
