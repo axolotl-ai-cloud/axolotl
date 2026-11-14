@@ -83,3 +83,27 @@ def test_data_parallel_index_ignores_cp_and_tp():
                     seen.setdefault((ds, e), set()).add(idx)
     assert all(len(v) == 1 for v in seen.values()), seen
     assert {next(iter(v)) for v in seen.values()} == set(range(4))
+
+
+def test_effective_layout_reports_the_plan_spelling(monkeypatch):
+    """The accelerate mesh's dp_shard is the expert split inside an EP group; the log reports
+    the dense FSDP degree as dp_shard and that split as efsdp."""
+    from axolotl.monkeypatch.accelerate import parallelism_config
+
+    messages = []
+    monkeypatch.setattr(
+        parallelism_config.LOG,
+        "info",
+        lambda msg, *args, **_: messages.append(msg % args if args else msg),
+    )
+    monkeypatch.setenv("LOCAL_WORLD_SIZE", "8")
+    mesh = SimpleNamespace(
+        mesh_dim_names=("dp_replicate", "dp_shard", "cp", "ep"),
+        shape=(2, 2, 2, 4),
+    )
+    parallelism_config.log_mesh_placement(mesh)
+    assert messages[-1] == (
+        "effective layout: dense (non-expert) weights FSDP-sharded over dp_shard x cp = "
+        "8 x 2 = 16 rank(s); experts EP-sharded 4-way and FSDP-split over efsdp=2; "
+        "everything replicated over dp_replicate=2"
+    )

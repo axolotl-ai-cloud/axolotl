@@ -180,6 +180,9 @@ def choose_device(cfg):
 
 
 def resolve_dtype(cfg):
+    if cfg.float32 and cfg.bf16 == "auto" and not cfg.fp16:
+        # AMP stays explicit with FP32 weights: `bf16: auto` does not turn autocast on
+        cfg.bf16 = False
     if (
         not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
@@ -216,7 +219,10 @@ def resolve_dtype(cfg):
         if cfg.bf16:
             cfg.fp16 = False
 
-    if cfg.bf16 or cfg.bfloat16:
+    # float32 sets the weight dtype only; bf16/fp16 still pick the autocast dtype
+    if cfg.float32:
+        cfg.torch_dtype = torch.float32
+    elif cfg.bf16 or cfg.bfloat16:
         cfg.torch_dtype = torch.bfloat16
     elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
         cfg.torch_dtype = torch.float16

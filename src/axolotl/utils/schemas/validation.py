@@ -118,6 +118,10 @@ _TPU_UNSUPPORTED_PLUGIN_MODULES = (
 )
 
 
+def _float32_with_autocast(get: Callable[[str], Any]) -> bool:
+    return bool(get("float32")) and (get("bf16") is True or get("fp16") is True)
+
+
 def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
 
@@ -135,6 +139,8 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     if any(get(flag) is not None for flag in _LORA_KERNEL_FLAGS):
         return False
     if adapter == "lora" and get("load_in_8bit"):
+        return False
+    if _float32_with_autocast(get):
         return False
     if get("trust_remote_code"):
         return False
@@ -552,6 +558,73 @@ class TrainingValidationMixin:
         if data.get("batch_size"):
             raise ValueError(f"At least two of {', '.join(fields)} must be set")
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_float32_master_weights(cls, data):
+        if not data.get("float32"):
+            return data
+        if data.get("bfloat16") or data.get("float16") or data.get("bf16") == "full":
+            raise ValueError(
+                "`float32: true` keeps FP32 weights, but `bfloat16`, `float16` or "
+                "`bf16: full` load half-precision weights. Remove one of them."
+            )
+        if _float32_with_autocast(data.get):
+            # the fused kernels mix the FP32 residual stream with autocast matmul outputs
+            kernels = [
+                flag
+                for flag in ("lora_qkv_kernel", "lora_mlp_kernel")
+                if data.get(flag)
+            ]
+            if kernels:
+                raise ValueError(
+                    f"`float32: true` with `bf16: true`/`fp16: true` does not support "
+                    f"{', '.join(f'`{flag}`' for flag in kernels)}: the fused LoRA "
+                    "kernels need the weights and activations in one dtype. Set them "
+                    "to `false`, or drop `float32`."
+                )
+            return data
+        data["bf16"] = False
+        LOG.info(
+            "`float32: true` without `bf16: true`/`fp16: true`: FP32 master weights "
+            "with FP32 compute and no autocast. Set `bf16: true` for FP32 masters "
+            "with BF16 autocast."
+        )
+        attn = str(data.get("attn_implementation") or "")
+        if data.get("flash_attention") or "flash" in attn:
+            raise ValueError(
+                "Flash attention needs half-precision inputs, but `float32: true` "
+                "without `bf16: true` runs without autocast. Set `bf16: true` for "
+                "FP32 master weights with BF16 autocast."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_float32_cut_cross_entropy(cls, data):
+        if not (data.get("float32") and data.get("cut_cross_entropy")):
+            return data
+        fsdp_config = data.get("fsdp_config") or {}
+        # the `fsdp_` prefix is stripped by another validator, which may not have run yet
+        policy = str(
+            fsdp_config.get("mixed_precision_policy")
+            or fsdp_config.get("fsdp_mixed_precision_policy")
+            or ""
+        ).lower()
+        half_param_dtype = policy in ("bf16", "fp16") or (
+            policy == "" and (data.get("bf16") is True or data.get("fp16") is True)
+        )
+        if fsdp_config and half_param_dtype:
+            return data
+        raise ValueError(
+            "`float32: true` with `cut_cross_entropy: true` needs FSDP2 with a "
+            "half-precision mixed-precision policy: the Cut Cross Entropy kernels need "
+            "the classifier and the hidden states in the same half dtype, and only "
+            "FSDP2 casts the FP32 `lm_head` to BF16/FP16 for compute (single GPU, DDP "
+            "and DeepSpeed pass it in FP32). Enable FSDP2 (`fsdp_config` with "
+            "`bf16: true`), drop `float32`, or use Liger's fused linear cross entropy "
+            "(`liger_fused_linear_cross_entropy: true`) or plain cross entropy."
+        )
 
     @model_validator(mode="before")
     @classmethod

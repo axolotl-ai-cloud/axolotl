@@ -49,7 +49,7 @@ Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across
 
 - How it works: the EP plugin slices each `Experts` module's `gate_up_proj` / `down_proj` along the experts dimension and replaces the dispatch/combine path with the chosen backend. Each rank sees a different batch (so EP is data-parallel for *data*) but holds different expert shards (model-parallel for *expert weights*).
 - When to use: MoE training where the experts dominate the parameter count and don't fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.
-- Requires FSDP2 (`fsdp_version: 2` + `fsdp_config`) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0's experts). Composes with FSDP, CP and HSDP: `dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size`. EP shards experts on the `ep` axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the `dp_shard` and `cp` ranks of their EP group (both see different tokens, so expert gradients reduce over both), with `dp_replicate` as an outer replication dim under HSDP (with no `dp_shard`/`cp` axis each replica keeps its expert slices whole and the replicas reduce expert gradients with each other). When `expert_parallel_size` equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (`lora_target_parameters` on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.
+- Requires FSDP2 (`fsdp_version: 2` + `fsdp_config`) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0's experts). Composes with FSDP, CP and HSDP: `dp_replicate_size × dp_shard_size × context_parallel_size = world_size`, where `dp_shard_size` is the dense FSDP degree (the same number transformers calls `fsdp_size`). EP regroups those ranks instead of adding a factor: `expert_parallel_size` must divide `dp_shard_size`, each group of `expert_parallel_size` consecutive ranks holds one full set of experts, split across its ranks, and `dp_shard_size / expert_parallel_size` of those groups split each expert slice with FSDP (as transformers' `efsdp_size`). The dense parameters FSDP-shard over `dp_shard × cp`; the expert slices FSDP-shard across the remaining `dp_shard` and `cp` ranks of their EP group (both see different tokens, so expert gradients reduce over both), with `dp_replicate` as an outer replication dim under HSDP (with `dp_shard_size == expert_parallel_size` and no CP each replica keeps its expert slices whole and the replicas reduce expert gradients with each other). Experts are not split across CP or TP ranks. When `expert_parallel_size` equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (`lora_target_parameters` on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.
 - Two dispatch backends, set with `expert_parallel_backend` (default `auto`): `deep_ep` uses the [DeepEP](https://github.com/deepseek-ai/DeepEP) library's fused kernels (Ampere or Hopper, all-pairs NVLink/RDMA); `torch` dispatches over a plain `all_to_all_single` on the EP process group and runs on any NCCL/gloo fabric, including PCIe-only nodes with no NVLink. `auto` picks `deep_ep` when it's importable, else `torch`. See [Expert Parallelism Integration](custom_integrations.qmd#expert-parallelism-integration) for backend details, install steps, and the `torch` backend's checkpointing note.
 - Checkpoints and resume: mid-training checkpoints hold every expert of every EP group, with its optimizer state, for full-parameter training and for LoRA on the experts. Incomplete legacy checkpoints containing only EP group 0's experts are refused on resume. See [Training checkpoints and resume](custom_integrations.qmd#training-checkpoints-and-resume) for the file contents and layout, how to recover from an old checkpoint, and limits.
 
@@ -69,7 +69,8 @@ fsdp_version: 2
 fsdp_config:
   # ...
 
-# The number of GPUs to shard the model parameters across (FSDP dimension).
+# The number of GPUs to shard the model parameters across (FSDP dimension; transformers'
+# fsdp_size). Defaults to the GPUs left after dp_replicate, context and tensor parallelism.
 dp_shard_size: 4
 
 # The number of times to replicate the sharded model (DDP dimension).
@@ -81,7 +82,8 @@ tensor_parallel_size: 1  # (default is 1, no TP)
 # Number of GPUs for Context Parallelism.
 context_parallel_size: 1 # (default is 1, no CP)
 
-# Number of GPUs to shard MoE experts across (Expert Parallel).
+# Number of GPUs to shard MoE experts across (Expert Parallel). It regroups the
+# dp_shard_size ranks and must divide dp_shard_size.
 expert_parallel_size: 1  # (default is 1, no EP)
 ```
 
@@ -103,19 +105,19 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
 
 3.  FSDP + CP on a single 8-GPU node for long context:
     - You want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.
-    - Set `dp_shard_size: 8` and `context_parallel_size: 8`. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.
+    - Set `context_parallel_size: 8` and leave `dp_shard_size` unset (it resolves to 1). FSDP shards over `dp_shard × cp`, so the weights are still split 8 ways, while all 8 GPUs work on the same batch. A more common setup splits the sequence across a smaller group, e.g. `context_parallel_size: 2` with `dp_shard_size` resolving to 4.
 
 4.  FSDP + EP on a 4-GPU MoE training run:
     - You want EP to shard the experts and FSDP to shard non-expert params on orthogonal mesh axes.
-    - Set `expert_parallel_size: 2` and `dp_shard_size: 2` (`ep × dp_shard == world_size`).
+    - Set `expert_parallel_size: 2` and leave `dp_shard_size` unset (or write `dp_shard_size: 4`): the dense weights shard 4 ways, two EP groups of 2 consecutive ranks each hold the experts, and each expert slice is FSDP-split across the 2 groups.
 
 5.  EP + CP on a 4-GPU long-context MoE run:
     - You want the experts sharded and each sequence split across 2 GPUs.
-    - Set `expert_parallel_size: 2` and `context_parallel_size: 2`. Add `dp_shard_size: 2` on 8 GPUs to also shard the dense weights (`ep × cp × dp_shard == world_size`).
+    - Set `expert_parallel_size: 2` and `context_parallel_size: 2` (`dp_shard_size` resolves to 2). On 8 GPUs the same config resolves `dp_shard_size` to 4 (`dp_shard × cp == world_size`), which also FSDP-splits each expert slice across 2 EP groups.
     - Axis order is `dp_replicate, dp_shard, cp, ep, tp` (outer to inner): `ep` groups are consecutive ranks and stay node-local whenever `ep × tp` fits on a node, while `dp_shard` groups stride across nodes. The startup log prints the mesh and which axes cross nodes.
 
 6.  HSDP + EP on 2 nodes of 4 GPUs:
-    - Set `dp_replicate_size: 2`, `expert_parallel_size: 2`, `dp_shard_size: 2`.
+    - Set `dp_replicate_size: 2`, `expert_parallel_size: 2`, `dp_shard_size: 4` (or leave it unset).
 
 Minimal MoE configs for the two EP compositions (4 and 8 GPUs; everything else is an ordinary FSDP2 config):
 
@@ -139,7 +141,7 @@ sample_packing: false
 base_model: Qwen/Qwen3-30B-A3B
 dp_replicate_size: 2
 expert_parallel_size: 2
-dp_shard_size: 2
+dp_shard_size: 4
 fsdp_version: 2
 fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
@@ -148,7 +150,12 @@ fsdp_config:
   cpu_ram_efficient_loading: true
 ```
 
-With EP active, `dp_shard_size` is only the extra FSDP split applied to the expert modules inside an EP group; the dense (non-expert) weights always shard over the flattened `dp_shard x cp x ep` axes. On a node of 8 GPUs, `expert_parallel_size: 8, dp_shard_size: 1` therefore means dense weights sharded 8 ways within the node and each rank keeping its experts whole, and adding `dp_replicate_size: 2` replicates that layout on a second node (HSDP) so only gradients cross the inter-node fabric. The startup log prints this effective layout.
+On a node of 8 GPUs, `expert_parallel_size: 8` with `dp_shard_size` unset (or `8`) means dense weights sharded 8 ways within the node and each rank keeping its experts whole; adding `dp_replicate_size: 2` replicates that layout on a second node (HSDP) so only gradients cross the inter-node fabric. On 16 GPUs without `dp_replicate_size`, `dp_shard_size` resolves to 16: dense weights shard 16 ways, experts shard 8 ways inside each node and each expert slice is FSDP-split across the 2 nodes. The startup log prints this effective layout.
+
+::: {.callout-warning}
+## `dp_shard_size` under expert parallelism changed meaning
+Earlier releases read `dp_shard_size` under EP as the extra split inside an EP group, with `expert_parallel_size` as a separate factor of the world size (`dp_replicate × dp_shard × cp × ep = world`). That spelling still resolves to the same layout and logs a deprecation warning with the rewritten value: multiply the old `dp_shard_size` by `expert_parallel_size` (old `dp_shard_size: 2, expert_parallel_size: 8` on 16 GPUs is `dp_shard_size: 16`), or leave it unset. It will be removed in a future release. A `dp_shard_size` that fits neither spelling fails when the config loads, with a suggested value.
+:::
 
 `expert_parallel_backend` defaults to `auto` (DeepEP when installed, else the torch all-to-all backend); LoRA on the experts works with `lora_target_parameters` in either layout. A fresh LoRA adapter is drawn per module from `seed`, so the init (and a one-step gradient check) is identical whether or not the experts are sharded.
 
@@ -165,13 +172,13 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | **FSDP + CP** | 1 | >1 | 1 | >1 | 1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism; gradients verified identical to plain FSDP at the same data-parallel degree (Ulysses, 8 GPUs). |
 | **HSDP + CP** | >1 | >1 | 1 | >1 | 1 | ✅ **3D Parallelism**. Verified with FSDP + CP; needs `dp_shard_size > 1`. |
 | **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ⚠️ **3D Parallelism**. Same code path as FSDP + TP; not yet verified for parity. |
-| **EP** | 1 | 1 | 1 | 1 | =world | ✅ Supported (MoE only). Shards experts across all ranks; dense weights FSDP-sharded across the world. Every EP layout requires FSDP2 with `state_dict_type: FULL_STATE_DICT`. |
-| **FSDP + EP** | 1 | >1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE). EP shards experts on the `ep` axis; FSDP shards non-experts on `dp_shard`. |
-| **EP + CP** | 1 | 1 | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
-| **FSDP + EP + CP** | 1 | >1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE). Expert slices shard across `dp_shard × cp`. |
-| **HSDP + EP** | >1 | >1 | 1 | 1 | >1 | ✅ **3D Parallelism** (MoE, multi-node). `dp_replicate` replicates the whole EP × FSDP layout; needs `dp_shard_size > 1` (or `cp_size > 1`, next row). |
-| **HSDP + EP**, no shard axis | >1 | 1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE, multi-node). `dp_replicate` replicates the pure-EP layout; the dense weights FSDP-shard over `ep` inside each replica and the expert slices stay whole per rank, reducing across replicas. |
-| **HSDP + EP + CP** | >1 | 1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE, multi-node, long context). `dp_replicate` outermost; the dense weights FSDP-shard over `ep × cp` and the expert slices over `cp`, so no `dp_shard` axis is needed (accelerate's own DDP + CP rejection is lifted when `ep` supplies the shard group). |
+| **EP** | 1 | =ep | 1 | 1 | =world | ✅ Supported (MoE only). Shards experts across all ranks; dense weights FSDP-sharded across the world. Every EP layout requires FSDP2 with `state_dict_type: FULL_STATE_DICT`. |
+| **FSDP + EP** | 1 | >ep | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE). EP shards experts on the `ep` axis; FSDP shards non-experts on `dp_shard` and splits each expert slice over `dp_shard / ep`. |
+| **EP + CP** | 1 | =ep | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
+| **FSDP + EP + CP** | 1 | >ep | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE). Expert slices shard across `dp_shard / ep × cp`. |
+| **HSDP + EP** | >1 | >ep | 1 | 1 | >1 | ✅ **3D Parallelism** (MoE, multi-node). `dp_replicate` replicates the whole EP × FSDP layout. |
+| **HSDP + EP**, experts whole | >1 | =ep | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE, multi-node). `dp_replicate` replicates the pure-EP layout; the dense weights FSDP-shard over `ep` inside each replica and the expert slices stay whole per rank, reducing across replicas. |
+| **HSDP + EP + CP** | >1 | =ep | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE, multi-node, long context). `dp_replicate` outermost; the dense weights FSDP-shard over `dp_shard × cp` and the expert slices over `cp` (accelerate's own DDP + CP rejection is lifted when `ep` supplies the shard group). |
 | EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; rejected at config validation. |
 | DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
 | Just TP / CP | 1 | 1 | >1 | >1 | 1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
@@ -183,4 +190,4 @@ Axolotl normalizes the loss per rank (`average_tokens_across_devices` is off), s
 - `tp_size` refers to `tensor_parallel_size`
 - `cp_size` refers to `context_parallel_size`
 - `sp` is accelerate's DeepSpeed Ulysses axis; axolotl sets it only when `context_parallel_size` runs under `deepspeed:`. Older configs' `sequence_parallel_degree` is a deprecated alias of `context_parallel_size`.
-- `ep_size` refers to `expert_parallel_size`
+- `ep_size` refers to `expert_parallel_size`; `=ep` means `dp_shard_size` equals `expert_parallel_size` (or is left unset on that many ranks)
