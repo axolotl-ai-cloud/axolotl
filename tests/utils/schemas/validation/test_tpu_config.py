@@ -60,6 +60,8 @@ def _with(cfg, **overrides):
         ({"gradient_checkpointing": "offload"}, "offload"),
         ({"torch_compile": True}, "torch_compile"),
         ({"tf32": True}, "tf32"),
+        ({"fsdp_config": {}}, "fsdp_config"),
+        ({"sequence_parallel_degree": 2}, "context_parallel_size"),
         ({"gpu_memory_limit": 20}, "gpu_memory_limit"),
         ({"max_memory": {"0": "20GiB"}}, "max_memory"),
     ],

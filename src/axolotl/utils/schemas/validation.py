@@ -1982,7 +1982,11 @@ class SystemValidationMixin:
             return data
 
         for key, reason in _TPU_UNSUPPORTED_OPTIONS.items():
-            if data.get(key):
+            # the loader treats any fsdp_config block, even an empty one, as FSDP
+            present = (
+                data.get(key) is not None if key == "fsdp_config" else data.get(key)
+            )
+            if present:
                 raise NotImplementedError(f"`{key}` is not supported on TPU: {reason}")
         for key in (
             "tensor_parallel_size",

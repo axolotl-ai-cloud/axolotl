@@ -1,6 +1,7 @@
 """TorchTPU device handling, run on CPU with the ``mock_tpu`` fixture."""
 
 import importlib.util
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -76,6 +77,16 @@ class TestChooseDevice:
         choose_device(cfg)
         assert cfg.device == "tpu:0"
         assert cfg.device_map is None
+
+    def test_tells_accelerate_the_device(self, mock_tpu, monkeypatch):
+        monkeypatch.delenv("ACCELERATE_TORCH_DEVICE", raising=False)
+        choose_device(DictDefault(world_size=1))
+        assert os.environ["ACCELERATE_TORCH_DEVICE"] == "tpu:0"
+
+    def test_keeps_user_accelerate_device(self, mock_tpu, monkeypatch):
+        monkeypatch.setenv("ACCELERATE_TORCH_DEVICE", "tpu:1")
+        choose_device(DictDefault(world_size=1))
+        assert os.environ["ACCELERATE_TORCH_DEVICE"] == "tpu:1"
 
     def test_multi_process_rejected(self, mock_tpu):
         with pytest.raises(NotImplementedError, match="Multi-chip"):

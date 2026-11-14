@@ -13,6 +13,7 @@ pip install "axolotl[tpu]" --extra-index-url https://download.pytorch.org/whl/cp
 ## Usage
 
 ```bash
+axolotl fetch examples
 axolotl train examples/tpu/qwen3-0.6b-lora.yml --launcher python
 axolotl train examples/tpu/qwen3-0.6b-fft.yml --launcher python
 ```

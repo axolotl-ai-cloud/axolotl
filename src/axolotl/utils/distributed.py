@@ -34,6 +34,11 @@ def is_tpu() -> bool:
     return accelerator is not None and accelerator.type == "tpu"
 
 
+def set_accelerate_tpu_device():
+    # accelerate's default_device has no TPU branch and would fall back to CPU.
+    os.environ.setdefault("ACCELERATE_TORCH_DEVICE", "tpu:0")
+
+
 def get_device_type() -> torch.device:
     if is_tpu():
         return torch.accelerator.current_accelerator()
@@ -93,6 +98,8 @@ def init_distributed_state():
     global distributed_state
     if distributed_state is not None:
         return
+    if is_tpu():
+        set_accelerate_tpu_device()
     from axolotl.utils.logging import get_logger
 
     log = get_logger(__name__)

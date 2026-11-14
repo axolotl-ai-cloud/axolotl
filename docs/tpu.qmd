@@ -27,9 +27,10 @@ pip install "axolotl[tpu]" --extra-index-url https://download.pytorch.org/whl/cp
 
 ## Quick start
 
-Training runs on a single chip, so launch one process:
+Download the example configs, then train. Training runs on a single chip, so launch one process:
 
 ```bash
+axolotl fetch examples
 axolotl train examples/tpu/qwen3-0.6b-lora.yml --launcher python
 ```
 

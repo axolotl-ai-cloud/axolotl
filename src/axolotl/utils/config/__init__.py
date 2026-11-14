@@ -34,7 +34,7 @@ from axolotl.utils.activation_checkpointing import (
 )
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_tpu
+from axolotl.utils.distributed import is_tpu, set_accelerate_tpu_device
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DPODataset,
@@ -140,6 +140,7 @@ def choose_device(cfg):
                 "process, e.g. `axolotl train config.yml --launcher python`."
             )
         cfg.device = "tpu:0"
+        set_accelerate_tpu_device()
         # accelerate's device_map planner does not see TPU memory and would place every
         # layer on CPU; load on host and let the Trainer move the model to the chip.
         cfg.device_map = None
