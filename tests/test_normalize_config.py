@@ -119,11 +119,21 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
     @patch("axolotl.utils.config.load_model_config")
     def test_model_types_force_non_reentrant(self, load_config):
-        for model_type in ("mistral_large4", "gemma4", "gemma4_unified"):
+        for model_type in (
+            "mistral_large4",
+            "gemma4",
+            "gemma4_unified",
+            "cohere_asr",
+        ):
             load_config.return_value = SimpleNamespace(model_type=model_type)
             cfg = self._get_base_cfg()
+            if model_type == "cohere_asr":
+                cfg.update(skip_prepare_dataset=True, asr=DictDefault(language="en"))
             cfg.activation_checkpointing = DictDefault(enabled=True, reentrant=True)
-            normalize_config(cfg)
+            with patch(
+                "axolotl.model_support.templates.find_spec", return_value=object()
+            ):
+                normalize_config(cfg)
 
             assert cfg.activation_checkpointing.reentrant is False, model_type
 

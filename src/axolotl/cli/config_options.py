@@ -2019,6 +2019,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
     ),
     (
+        ("--asr.audio-column",),
+        "asr__audio_column",
+        "str",
+        "Dataset column holding the audio: a `datasets.Audio` feature, a {'array', 'sampling_rate'} dict, raw bytes, or a file path.",
+    ),
+    (
+        ("--asr.text-column",),
+        "asr__text_column",
+        "str",
+        "Dataset column holding the transcript.",
+    ),
+    (
+        ("--asr.language",),
+        "asr__language",
+        "str",
+        "Language code used in the decoder prompt for rows without a `language_column` value, e.g. 'en'.",
+    ),
+    (
+        ("--asr.language-column",),
+        "asr__language_column",
+        "str",
+        "Optional dataset column holding a per-row language code. Falls back to `language` when empty.",
+    ),
+    (
+        ("--asr.punctuation/--no-asr.punctuation",),
+        "asr__punctuation",
+        None,
+        "Whether the decoder prompt requests punctuated, cased output.",
+    ),
+    (
         ("--reward-model/--no-reward-model",),
         None,
         None,
