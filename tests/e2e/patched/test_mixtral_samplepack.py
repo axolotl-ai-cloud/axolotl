@@ -4,6 +4,8 @@ E2E tests for mixtral
 
 import unittest
 
+import pytest
+
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -16,7 +18,12 @@ from ..utils import (
     with_temp_dir,
 )
 
-pytestmark = requires_flash_attn
+pytestmark = [
+    requires_flash_attn,
+    pytest.mark.skip_xpu(
+        reason="flash-attn2 varlen backward hits a GPU memory fault (DEVICE_LOST) on XPU"
+    ),
+]
 
 
 class TestMixtral(unittest.TestCase):
