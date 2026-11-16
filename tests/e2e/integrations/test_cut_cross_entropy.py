@@ -18,6 +18,10 @@ from tests.e2e.utils import (
     requires_flash_attn,
 )
 
+pytestmark = pytest.mark.skip_xpu(
+    reason="CUDA-only: Cut Cross Entropy requires an Ampere-or-newer CUDA GPU"
+)
+
 
 @pytest.fixture()
 def min_cfg(temp_dir):

@@ -861,6 +861,9 @@ def _wrapped_gdn_block_nf4(targets, in_features=256, base_dtype=torch.bfloat16):
     return block
 
 
+@pytest.mark.skip_xpu(
+    reason="NF4 dequantize calls torch._C._cuda_getCurrentRawStream, which XPU builds lack"
+)
 @pytest.mark.parametrize("base_dtype", [torch.bfloat16, torch.float32])
 def test_apply_lora_gdn_in_proj_matches_peft_nf4(base_dtype):
     """QLoRA (NF4 4-bit base, W_quant dequant path) fused in-projection matches peft for

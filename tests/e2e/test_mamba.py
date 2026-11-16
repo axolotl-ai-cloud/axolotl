@@ -72,6 +72,9 @@ class TestMamba(unittest.TestCase):
     Test case for Mamba1 models on packed sequences; needs no kernels
     """
 
+    @pytest.mark.skip_xpu(
+        reason="hangs: UR_RESULT_ERROR_OUT_OF_RESOURCES, then the process spins at 100% CPU"
+    )
     @with_temp_dir
     def test_fft_packed(self, temp_dir):
         _train(_packed_cfg("state-spaces/mamba-130m-hf", temp_dir))
@@ -86,6 +89,9 @@ class TestMamba2(unittest.TestCase):
     Test case for Mamba2 models on packed sequences via the hub kernels
     """
 
+    @pytest.mark.skip_xpu(
+        reason="CUDA-only: mamba2 sample packing needs the mamba-ssm CUDA kernels"
+    )
     @with_temp_dir
     def test_fft_packed(self, temp_dir):
         _train(_packed_cfg("AntonV/mamba2-130m-hf", temp_dir, use_kernels=True))

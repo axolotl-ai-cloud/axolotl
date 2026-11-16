@@ -1,0 +1,6 @@
+# uv --overrides for Intel XPU environments: the CUDA-only packages Axolotl depends on are never installed.
+# Triton comes from the XPU PyTorch wheel's own dependency (triton-xpu).
+triton ; python_version < "0"
+pytorch-triton ; python_version < "0"
+xformers ; python_version < "0"
+nvidia-ml-py ; python_version < "0"
