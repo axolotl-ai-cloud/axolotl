@@ -2240,7 +2240,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if not qat_cfg:
             return data
 
-        if data.get("peft"):
+        if data.get("adapter") or data.get("peft"):
             raise ValueError("QAT and PEFT cannot be used together.")
 
         if data.get("load_in_8bit"):

@@ -29,6 +29,8 @@ qat:
   fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
 ```
 
+QAT is full fine-tuning only: it cannot be combined with an `adapter` (LoRA, QLoRA, etc.) or with `load_in_4bit`/`load_in_8bit`.
+
 We support the following quantization schemas:
 
 - `Int4WeightOnly` (requires the `fbgemm-gpu` extra when installing Axolotl)
