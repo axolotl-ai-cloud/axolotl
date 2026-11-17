@@ -1026,9 +1026,6 @@ class TestDoraCacheInvalidation:
     """Regression: DoRA weight norm cache must invalidate after in-place
     param updates (optimizer steps), not just pointer changes."""
 
-    @pytest.mark.skip_xpu(
-        reason="the Triton DoRA path is gated on W.is_cuda; the XPU fallback keeps a stale weight-norm cache"
-    )
     def test_cache_invalidates_on_inplace_update(self):
         W = torch.randn(64, 64, dtype=DTYPE, device=DEVICE)
         A = torch.randn(8, 64, dtype=DTYPE, device=DEVICE)
@@ -1045,7 +1042,7 @@ class TestDoraCacheInvalidation:
 
         # Simulate optimizer in-place update (pointer stays same, content changes)
         old_ptr = A.data_ptr()
-        A.data.add_(torch.randn_like(A) * 0.1)
+        A.add_(torch.randn_like(A) * 0.1)
         assert A.data_ptr() == old_ptr, "Pointer should not change for in-place ops"
 
         # Second call must detect the change and recompute
