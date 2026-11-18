@@ -16,7 +16,10 @@ from typing import Generator
 import httpx
 import pytest
 
-from axolotl.utils.dict import DictDefault
+# Must precede axolotl imports; telemetry reads it at import time.
+os.environ["AXOLOTL_DO_NOT_TRACK"] = "1"
+
+from axolotl.utils.dict import DictDefault  # noqa: E402
 
 from tests.cuda_init_guard import CudaInitGuard
 from tests.global_state import GlobalStateGuard
@@ -911,9 +914,3 @@ def test_load_fixtures(
     download_llama2_model_fixture,
 ):
     pass
-
-
-@pytest.fixture(autouse=True)
-def disable_telemetry(monkeypatch):
-    monkeypatch.setenv("AXOLOTL_DO_NOT_TRACK", "1")
-    yield
