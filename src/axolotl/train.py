@@ -36,7 +36,7 @@ from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import cleanup_distributed
+from axolotl.utils.distributed import cleanup_distributed, is_main_process
 from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
@@ -451,6 +451,11 @@ def save_trained_model(
                 clear_native_metadata(cfg.output_dir)
 
         PluginManager.get_instance().post_model_save(cfg, model, cfg.output_dir)
+
+    if is_main_process():
+        from axolotl.utils.mtp import maybe_copy_mtp_weights
+
+        maybe_copy_mtp_weights(cfg, cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
