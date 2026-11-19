@@ -49,7 +49,7 @@ dependencies = [
     "nvidia-ml-py==12.560.30",
     "art",
     "tensorboard",
-    "python-dotenv==1.0.1",
+    "python-dotenv==1.2.4",
 
     # Remote filesystems
     "s3fs==2026.6.0",
