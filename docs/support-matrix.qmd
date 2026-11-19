@@ -53,6 +53,7 @@ Most people start with two, each a single plugin to turn on: [Liger](#fused-trai
 | DFT | `use_dft: true` | n/a | prompt to response | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
 | Native diffusion LM 🟡 | `diffusion_lm:` | n/a | prompt to response | masked/uniform-noise denoising objective from the model profile; LoRA only; see [diffusion_lm](diffusion_lm.qmd) |
 | Typed decisions 🟡 | plugin `diffusion_decision` + `diffusion_decision:` | n/a | typed decision JSONL | choice/score/yes-no labels on a diffusion canvas |
+| Next-Concept Modeling 🟡 | plugin `ncm` + `ncm: {stage: tokenizer \| generator}` | n/a | raw text, fixed-length blocks | two-stage from scratch: multiscale VQ tokenizer, then a coarse-to-fine parallel generator ([paper](https://arxiv.org/abs/2610.14162)); unconditional only |
 
 Most runs start with **SFT** (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.
 
@@ -217,6 +218,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | `kd` | knowledge distillation (offline + online vLLM/SGLang teacher) |
 | `diffusion` 🔴 | legacy `diffusion:` block; translated to `diffusion_lm.from_causal_lm: true` |
 | `diffusion_decision` 🟡 | typed-decision training for native diffusion models |
+| `ncm` 🟡 | Next-Concept Modeling: coarse-to-fine parallel text generation |
 | `hatchery` | remote training (Tinker/Hatchery backends) |
 | `nemo_gym` | RL environments / verifiable rewards |
 | `llm_compressor` | sparse fine-tuning |
