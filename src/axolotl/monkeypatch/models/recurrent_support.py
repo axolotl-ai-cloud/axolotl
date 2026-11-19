@@ -16,6 +16,8 @@ PACKING_PATCHED = frozenset(
         "falcon_h1",
         "falcon_mamba",
         "granitemoehybrid",
+        "inkling_mm_model",
+        "inkling_text",
         "kimi_linear",
         "lfm2",
         "lfm2_moe",
@@ -35,7 +37,6 @@ PACKING_PATCHED = frozenset(
 # recurrent model types whose mixers never see a document boundary
 PACKING_UNSUPPORTED = frozenset(
     {
-        "inkling",
         "jamba",
         "minimax",
         "olmo_hybrid",
