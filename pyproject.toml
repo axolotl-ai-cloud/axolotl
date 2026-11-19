@@ -19,7 +19,7 @@ dependencies = [
     "tokenizers==0.23.3",
     "transformers==5.22.0",
     "accelerate==1.15.0",
-    "datasets==5.0.1",
+    "datasets==5.2.0",
     "trl==1.17.1",
     "tree-recurrence>=0.1.1,<0.2",
     "hf_xet>=1.5.2",
