@@ -175,3 +175,31 @@ def test_template_requiring_reasoning_labels_reasoning_and_content(smollm2_token
         ]
     )
     assert trained == "greet</think>hello<|im_end|>part</think>see you<|im_end|>"
+
+
+def test_field_thinking_maps_alongside_explicit_property_mappings(smollm2_tokenizer):
+    # config validation always fills message_property_mappings with role/content
+    strategy = load(
+        smollm2_tokenizer,
+        DictDefault({"train_on_inputs": False, "sequence_len": 512}),
+        DictDefault(
+            {
+                "chat_template": "jinja",
+                "chat_template_jinja": REQUIRES_REASONING_TEMPLATE,
+                "field_messages": "messages",
+                "message_property_mappings": {"role": "role", "content": "content"},
+                "field_thinking": "thinking",
+            }
+        ),
+    )
+    conversation = {
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello", "thinking": "greet"},
+        ]
+    }
+    turns = strategy.get_conversation_thread(conversation)
+    assert turns[1]["reasoning_content"] == "greet"
+    assert "<think>greet</think>hello" in smollm2_tokenizer.decode(
+        strategy.tokenize_prompt(conversation)["input_ids"]
+    )

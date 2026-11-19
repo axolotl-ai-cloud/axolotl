@@ -34,6 +34,7 @@ _BUILTIN_MODULES = (
     "axolotl.model_support.paddleocr_vl",
     "axolotl.model_support.qwen3_5_moe",
     "axolotl.model_support.qwen4_exp",
+    "axolotl.model_support.ricursive",
 )
 
 _REGISTRY: dict[str, ModelSupport] = {}

@@ -30,6 +30,8 @@
 
 ## 🎉 Latest Updates
 
+- 2026/11:
+  - Ricursive's [Ripple-65B](https://docs.axolotl.ai/docs/models/ripple.html) is now supported in Axolotl, with sample packing and Cut Cross Entropy.
 - 2026/10:
   - MistralAI's [Mistral Large 4](https://docs.axolotl.ai/docs/models/mistral-large-4.html) is now supported in Axolotl, with merge-aware NVFP4 LoRA and expert-parallel training.
   - Reflection's [Beam](https://docs.axolotl.ai/docs/models/beam.html) is now supported in Axolotl, with QLoRA and expert-parallel LoRA configs including NVFP4.
