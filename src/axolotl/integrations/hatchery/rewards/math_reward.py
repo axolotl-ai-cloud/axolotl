@@ -19,20 +19,30 @@ LOG = get_logger(__name__)
 
 
 def extract_boxed(text: str) -> str | None:
-    """Extract \\boxed{...} answer handling nested braces."""
-    match = re.search(r"\\boxed\{", text)
-    if not match:
-        return None
-    start = match.end()
-    depth = 1
-    i = start
-    while i < len(text) and depth > 0:
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-        i += 1
-    return text[start : i - 1] if depth == 0 else None
+    """Extract the last complete \\boxed{...} answer, handling nested braces.
+
+    The first box used to win, so a scratch value that matched the gold
+    scored 1 after the final answer had changed.
+    """
+    last = None
+    start_at = 0
+    while True:
+        match = re.search(r"\\boxed\{", text[start_at:])
+        if not match:
+            return last
+        content_start = start_at + match.end()
+        depth = 1
+        i = content_start
+        while i < len(text) and depth > 0:
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+            i += 1
+        if depth != 0:
+            return last
+        last = text[content_start : i - 1]
+        start_at = i
 
 
 def math_reward(prompts: list[str], completions: list[str], **kwargs) -> list[float]:
