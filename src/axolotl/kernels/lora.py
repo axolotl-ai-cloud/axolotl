@@ -68,7 +68,7 @@ def _parameter_dtypes(*parameters):
 def _gradient_mm(left, right, dtype, scale):
     if dtype == torch.float32 and left.dtype in (torch.float16, torch.bfloat16):
         with torch.autocast(device_type=left.device.type, enabled=False):
-            if left.is_cuda:
+            if left.is_cuda or left.is_xpu:
                 return torch.mm(left, right, out_dtype=torch.float32).mul_(scale)
             return torch.mm(left.float(), right.float()).mul_(scale)
     result = torch.empty(
@@ -128,7 +128,7 @@ def _projection_forward_mlp(self, X, kind):
     )
     hidden = (
         _GatedActivation.apply(gate, up, kind)
-        if gate.is_cuda and exact_activation
+        if (gate.is_cuda or gate.is_xpu) and exact_activation
         else self.act_fn(gate) * up
     )
     return apply_lora_linear(self.down_proj, hidden)
@@ -281,7 +281,7 @@ def _compute_dora_scale(
             return magnitude.to(dtype) / cached_norm
 
     # Full recomputation - try Triton first
-    if _should_use_triton_dora() and W.is_cuda:
+    if _should_use_triton_dora() and (W.is_cuda or W.is_xpu):
         from .dora import triton_dora_scale
 
         result = triton_dora_scale(W, W_quant, A, B, s, magnitude, dtype)

@@ -178,7 +178,8 @@ def patch_moe_quantization_on_load(cfg):
 
                 # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")
-                torch.cuda.empty_cache()
+                if torch.accelerator.is_available():
+                    torch.accelerator.empty_cache()
 
     transformers.core_model_loading.set_param_for_module = _patched_set_param_for_module
     _moe_load_state["patched"] = True

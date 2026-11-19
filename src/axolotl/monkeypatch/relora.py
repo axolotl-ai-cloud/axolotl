@@ -452,7 +452,8 @@ def merge_and_save(
         barrier()
         del in_tensors
         del out_tensors
-        torch.cuda.empty_cache()
+        if torch.accelerator.is_available():
+            torch.accelerator.empty_cache()
 
     if actually_save and len(unique_shards) > 1:
         with open(
