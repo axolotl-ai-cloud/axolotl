@@ -19,7 +19,7 @@ WORKDIR /workspace/axolotl
 RUN git fetch origin +$IMAGE_REF && \
     git checkout FETCH_HEAD
 
-RUN uv pip install packaging==26.0 setuptools==78.1.1
+RUN uv pip install packaging==26.3 setuptools==78.1.1
 RUN uv pip uninstall causal_conv1d
 RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1" "kernels-data"
 # pin the base image's torch build so an extra with an unbounded torch (e.g. blackwell) cannot swap it
