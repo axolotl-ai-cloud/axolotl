@@ -561,3 +561,191 @@ class TestGlm5NextSupport:
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 
         assert {"glm5_next", "glm5_next_text"} <= set(SUPPORTED_MULTIPACK_MODEL_TYPES)
+
+
+class TestCohereAsrSupport:
+    """Built-in Cohere Transcribe descriptor on the speech seq2seq family."""
+
+    @staticmethod
+    def _tiny_model():
+        import torch
+        from transformers import AutoModelForSpeechSeq2Seq, CohereAsrConfig
+
+        torch.manual_seed(0)
+        config = CohereAsrConfig(
+            encoder_config={
+                "hidden_size": 32,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 2,
+                "intermediate_size": 64,
+                "subsampling_conv_channels": 8,
+                "num_mel_bins": 16,
+            },
+            vocab_size=64,
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            intermediate_size=64,
+            max_position_embeddings=16,
+        )
+        return AutoModelForSpeechSeq2Seq.from_config(config)
+
+    def test_registered_and_multimodal(self):
+        support = get_model_support("cohere_asr")
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "speech_seq2seq"
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+            "context_parallel",
+        }
+        assert all(
+            isinstance(cap, Unsupported) for cap in support.capabilities.values()
+        )
+
+    def test_auto_model_cls(self):
+        from transformers import AutoModelForSpeechSeq2Seq
+
+        support = get_model_support("cohere_asr")
+        assert support.get_auto_model_cls() is AutoModelForSpeechSeq2Seq
+
+    def test_matches_processor(self):
+        from transformers.models.cohere_asr import CohereAsrProcessor
+
+        processor = object.__new__(CohereAsrProcessor)
+        assert get_model_support_for_processor(processor) is get_model_support(
+            "cohere_asr"
+        )
+
+    @staticmethod
+    def _run_configure(cfg, **context_kwargs):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        # the audio extra is optional; only test_configure_run_requires_audio_extra checks it
+        with patch("axolotl.model_support.templates.find_spec", return_value=object()):
+            run_model_support_hooks(
+                get_model_support("cohere_asr"),
+                ModelHookPhase.CONFIGURE_RUN,
+                ModelHookContext(
+                    cfg=cfg,
+                    model_config=SimpleNamespace(max_position_embeddings=1024),
+                    **context_kwargs,
+                ),
+            )
+
+    @staticmethod
+    def _cfg(**overrides):
+        cfg = DictDefault(
+            model_config_type="cohere_asr",
+            sequence_len=448,
+            skip_prepare_dataset=True,
+            asr=DictDefault(language="en"),
+        )
+        cfg.update(overrides)
+        return cfg
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"sample_packing": True},
+            {"group_by_length": True},
+            {"generate_samples": True},
+            {"do_causal_lm_eval": True},
+            {"do_bench_eval": True},
+            {"eval_table_size": 5},
+            {"rl": "dpo"},
+            {"reward_model": True},
+            {"process_reward_model": True},
+            {"freeze_mm_modules": True},
+            {"skip_prepare_dataset": False},
+            {"remove_unused_columns": True},
+            {"asr": None},
+            {"asr": DictDefault(language=None)},
+            {"attn_implementation": "flash_attention_2"},
+            {"attn_implementation": "flex_attention"},
+            {"sequence_len": 1025},
+            {"eval_sequence_len": 1025},
+            {"sequence_len": 10},
+            {"eval_sequence_len": 10},
+        ],
+    )
+    def test_configure_run_rejects(self, overrides):
+        with pytest.raises(ValueError):
+            self._run_configure(self._cfg(**overrides))
+
+    @pytest.mark.parametrize(
+        "asr", [DictDefault(language="en"), DictDefault(language_column="lang")]
+    )
+    def test_configure_run_accepts(self, asr):
+        self._run_configure(
+            self._cfg(sequence_len=1024, attn_implementation="sdpa", asr=asr)
+        )
+
+    def test_model_build_refuses_inference(self):
+        context = ModelHookContext(cfg=self._cfg(), inference=True)
+        with pytest.raises(ValueError, match="does not support"):
+            run_model_support_hooks(
+                get_model_support("cohere_asr"),
+                ModelHookPhase.BEFORE_MODEL_BUILD,
+                context,
+            )
+        run_model_support_hooks(
+            get_model_support("cohere_asr"),
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            ModelHookContext(cfg=self._cfg(), inference=False),
+        )
+
+    def test_configure_run_requires_audio_extra(self, monkeypatch):
+        monkeypatch.setattr(
+            "axolotl.model_support.templates.find_spec",
+            lambda name: None if name == "soundfile" else object(),
+        )
+        with pytest.raises(ImportError, match=r"axolotl\[audio\]"):
+            run_model_support_hooks(
+                get_model_support("cohere_asr"),
+                ModelHookPhase.CONFIGURE_RUN,
+                ModelHookContext(cfg=self._cfg()),
+            )
+
+    def test_nf4_keeps_output_head_unquantized(self):
+        from axolotl.utils.nf4 import bnb_4bit_skip_modules, nf4_skip_modules
+
+        assert "proj_out" in nf4_skip_modules("cohere_asr", {})
+        assert bnb_4bit_skip_modules("cohere_asr") == ["proj_out"]
+
+    def test_peft_task_type_is_none(self):
+        from axolotl.loaders.adapter import _get_peft_task_type
+
+        assert _get_peft_task_type(self._tiny_model()) is None
+
+    def test_batchnorm_stats_frozen_under_peft_train(self):
+        import torch
+        from peft import LoraConfig, get_peft_model
+
+        model = get_peft_model(
+            self._tiny_model(), LoraConfig(r=2, target_modules=["q_proj"])
+        )
+        run_model_support_hooks(
+            get_model_support("cohere_asr"),
+            ModelHookPhase.AFTER_ADAPTER_LOAD,
+            ModelHookContext(cfg=DictDefault(), model=model),
+        )
+        norms = [m for m in model.modules() if isinstance(m, torch.nn.BatchNorm1d)]
+        assert norms
+        before = [norm.running_mean.clone() for norm in norms]
+
+        model.train()
+        model(
+            input_features=torch.randn(2, 64, 16),
+            attention_mask=torch.ones(2, 64, dtype=torch.long),
+            decoder_input_ids=torch.tensor([[4, 5, 6], [4, 7, 8]]),
+            labels=torch.tensor([[5, 6, 3], [7, 8, 3]]),
+        ).loss.backward()
+
+        assert model.training
+        assert not any(norm.training for norm in norms)
+        for norm, stats in zip(norms, before, strict=True):
+            assert torch.equal(norm.running_mean, stats)

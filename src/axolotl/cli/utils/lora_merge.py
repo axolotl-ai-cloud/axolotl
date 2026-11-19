@@ -278,6 +278,10 @@ def _plan_trainable_token_merges(
     return plan
 
 
+class _ComposeOnlyPattern(str):
+    """A renaming applied only after the others, never as a candidate of its own."""
+
+
 def _renamed_key_candidates(
     clean_key: str, weight_renamings: Optional[Dict[str, str]]
 ) -> list[str]:
@@ -295,7 +299,8 @@ def _renamed_key_candidates(
         composed = key
         for src_pattern, tgt_pattern in weight_renamings.items():
             renamed = re.sub(src_pattern, tgt_pattern, key).removesuffix(".")
-            if renamed != clean_key and renamed not in candidates:
+            compose_only = isinstance(src_pattern, _ComposeOnlyPattern)
+            if not compose_only and renamed != clean_key and renamed not in candidates:
                 candidates.append(renamed)
             composed = re.sub(src_pattern, tgt_pattern, composed)
         composed = composed.removesuffix(".")
@@ -362,9 +367,10 @@ def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
     from transformers import (
         AutoModel,
         AutoModelForCausalLM,
+        AutoModelForSpeechSeq2Seq,
     )
 
-    auto_classes = [AutoModelForCausalLM, AutoModel]
+    auto_classes = [AutoModelForCausalLM, AutoModelForSpeechSeq2Seq, AutoModel]
     try:
         from transformers import AutoModelForImageTextToText
 
@@ -2542,8 +2548,9 @@ def _get_conversion_info(
         _get_model_conversion_mapping(base_model_path, trust_remote_code, meta_model)
         or conversions
     )
+    prefix_renaming = _base_model_prefix_renaming(meta_model)
     if not conversions and not rename_conversions:
-        return {}, []
+        return prefix_renaming, []
 
     renamings = {}
     for conv in rename_conversions:
@@ -2570,9 +2577,27 @@ def _get_conversion_info(
             if scoped is not None:
                 renamings[scoped[0]] = scoped[1]
 
+    # last, so composing every renaming yields the full runtime key
+    renamings.update(prefix_renaming)
     weight_converters = [c for c in conversions or [] if isinstance(c, WeightConverter)]
 
     return renamings, weight_converters
+
+
+def _base_model_prefix_renaming(meta_model) -> Dict[str, str]:
+    """Prepend `base_model_prefix` to keys saved without it, as from_pretrained does."""
+    prefix = getattr(meta_model, "base_model_prefix", "")
+    base = getattr(meta_model, prefix, None) if prefix else None
+    if base is None or base is meta_model:
+        return {}
+    top_level = {name for name, _ in meta_model.named_children()}
+    children = sorted(
+        name for name, _ in base.named_children() if name not in top_level
+    )
+    if not children:
+        return {}
+    alternation = "|".join(re.escape(name) for name in children)
+    return {_ComposeOnlyPattern(rf"^(?=(?:{alternation})\.)"): f"{prefix}."}
 
 
 def _scope_renaming(
