@@ -36,6 +36,10 @@ import torch
 
 from tests.accelerator import DEVICE_TYPE, device_module, gpu_available
 
+pytestmark = pytest.mark.skip_xpu(
+    reason="the scattermoe Triton launch enters torch.cuda.device(), which rejects xpu devices"
+)
+
 # Failing-config constants (mirror tests/integrations/monkeypatch/
 # bench_tiled_mlp_moe.py at seq=524288, shards=16).
 _T = 32768

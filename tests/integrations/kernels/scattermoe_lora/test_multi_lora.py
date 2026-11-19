@@ -18,7 +18,12 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.multi_lora import (
 
 from tests.accelerator import DEVICE_TYPE, gpu_available
 
-pytestmark = pytest.mark.skipif(not gpu_available(), reason="GPU required")
+pytestmark = [
+    pytest.mark.skipif(not gpu_available(), reason="GPU required"),
+    pytest.mark.skip_xpu(
+        reason="the scattermoe Triton launch enters torch.cuda.device(), which rejects xpu devices"
+    ),
+]
 
 
 def _reference(x, w, lora_a, lora_b, expert, tenant, num_tenants, rank, scaling):

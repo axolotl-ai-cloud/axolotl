@@ -236,6 +236,9 @@ def _build_scattermoe_block(hidden, intermediate, num_experts, top_k, dtype, dev
     return block
 
 
+@pytest.mark.skip_xpu(
+    reason="the scattermoe Triton launch enters torch.cuda.device(), which rejects xpu devices"
+)
 def test_tiled_scattermoe_gated_mlp_parity():
     """ScatterMoEGatedMLP: tiled vs un-tiled fwd+bwd parity in bf16.
 

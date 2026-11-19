@@ -1,0 +1,41 @@
+name: Intel GPU
+
+on:
+  pull_request:
+    # labeled only: each run on the self-hosted runner needs a maintainer to (re)apply the label
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TRANSFORMERS_IS_CI: "yes"
+
+jobs:
+  xpu-e2e:
+    if: >-
+      (github.repository == 'axolotl-ai-cloud/axolotl' || vars.XPU_CI == 'true') &&
+      (github.event_name == 'workflow_dispatch' ||
+       (!github.event.pull_request.draft && github.event.label.name == 'run-xpu-tests'))
+    concurrency:
+      group: xpu-e2e-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    runs-on: [self-hosted, linux, xpu]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Set up the XPU environment
+        run: bash cicd/setup_xpu_env.sh "$RUNNER_TEMP/venv-xpu"
+
+      - name: Run the XPU lane
+        env:
+          PYTORCH_VERSION: "2.14.0"
+        run: |
+          source "$RUNNER_TEMP/venv-xpu/bin/activate"
+          ./cicd/cicd_xpu.sh

@@ -47,6 +47,9 @@ class TestProfiler:
     test cases for the pytorch profiler callback
     """
 
+    @pytest.mark.skip_xpu(
+        reason="CUDA-only: the profiler callback calls torch.cuda.memory._record_memory_history"
+    )
     def test_profiler_saves(self, profiler_base_cfg, temp_dir):
         cfg = profiler_base_cfg | DictDefault(
             output_dir=temp_dir,
@@ -61,6 +64,9 @@ class TestProfiler:
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "snapshot.pickle").exists()
 
+    @pytest.mark.skip_xpu(
+        reason="CUDA-only: the profiler callback calls torch.cuda.memory._record_memory_history"
+    )
     def test_profiler_saves_w_start(self, profiler_base_cfg, temp_dir):
         cfg = profiler_base_cfg | DictDefault(
             output_dir=temp_dir,
@@ -76,6 +82,9 @@ class TestProfiler:
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "snapshot.pickle").exists()
 
+    @pytest.mark.skip_xpu(
+        reason="CUDA-only: the profiler callback calls torch.cuda.memory._record_memory_history"
+    )
     @pytest.mark.parametrize(
         "profiler_steps_start",
         [3, 5],

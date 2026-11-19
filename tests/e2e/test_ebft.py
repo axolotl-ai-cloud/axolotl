@@ -3,6 +3,8 @@
 import unittest
 from pathlib import Path
 
+import pytest
+
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_preference_datasets
 from axolotl.train import train
@@ -17,6 +19,9 @@ class TestEBFTLlamaLora(unittest.TestCase):
     Test case for EBFT strided mode, which generates in-process and needs no vLLM server
     """
 
+    @pytest.mark.skip_xpu(
+        reason="the EBFT strided trainer hard-codes cuda devices and autocast"
+    )
     @with_temp_dir
     def test_ebft_strided_lora(self, temp_dir):
         cfg = DictDefault(

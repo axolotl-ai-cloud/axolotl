@@ -26,6 +26,9 @@ def test_dequantize_null_state():
     assert torch.equal(dequantize(W, None), W)
 
 
+@pytest.mark.skip_xpu(
+    reason="NF4 dequantize calls torch._C._cuda_getCurrentRawStream, which XPU builds lack"
+)
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 def test_dequantize_matches_bnb(dtype):
     """Bit-exact vs bnb's own dequant for every supported output dtype. fp32 previously
@@ -51,6 +54,9 @@ def test_dequantize_non_nested():
     assert result.shape == shape
 
 
+@pytest.mark.skip_xpu(
+    reason="NF4 dequantize calls torch._C._cuda_getCurrentRawStream, which XPU builds lack"
+)
 def test_dequantize_torch_compile_nested():
     """NF4 double-quant under torch.compile (the QLoRA hot path)."""
     shape = (128, 64)
