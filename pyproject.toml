@@ -29,6 +29,7 @@ dependencies = [
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
+    "pillow>=13.0.0",
     "gradio==6.32.0",
     "pydantic==2.13.5",
     "addict",
