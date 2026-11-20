@@ -51,7 +51,11 @@ def marlin_w4a16_available() -> bool:
             return False
         from torch.utils.cpp_extension import CUDA_HOME
 
-        return CUDA_HOME is not None
+        # CUDA_HOME falls back to /usr/local/cuda, which runtime-only images have without nvcc
+        if CUDA_HOME is None:
+            return False
+        nvcc = os.path.join(CUDA_HOME, "bin", "nvcc")
+        return os.path.isfile(nvcc) and os.access(nvcc, os.X_OK)
     except Exception:
         return False
 
