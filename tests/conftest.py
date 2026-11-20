@@ -18,6 +18,9 @@ import pytest
 
 # Must precede axolotl imports; telemetry reads it at import time.
 os.environ["AXOLOTL_DO_NOT_TRACK"] = "1"
+os.environ["DO_NOT_TRACK"] = "1"
+# The CLI calls load_dotenv(); keep a local .env from leaking into tests.
+os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 
 from axolotl.utils.dict import DictDefault  # noqa: E402
 

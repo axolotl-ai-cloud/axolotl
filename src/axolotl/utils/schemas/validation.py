@@ -565,7 +565,7 @@ class TrainingValidationMixin:
             "with BF16 autocast."
         )
         attn = str(data.get("attn_implementation") or "")
-        if data.get("flash_attention") or "flash" in attn:
+        if "flash" in attn:
             raise ValueError(
                 "Flash attention needs half-precision inputs, but `float32: true` "
                 "without `bf16: true` runs without autocast. Set `bf16: true` for "
