@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess  # nosec B404
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
@@ -13,11 +14,15 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 CONVERT_SCRIPT = "convert_hf_to_gguf.py"
+LORA_CONVERT_SCRIPT = "convert_lora_to_gguf.py"
 QUANTIZE_BIN_PATHS = ("build/bin/llama-quantize", "llama-quantize")
 WEIGHT_SUFFIXES = (".safetensors", ".bin")
+ADAPTER_CONFIG = "adapter_config.json"
 
 
-def resolve_llama_cpp(llama_cpp_dir: str | Path | None = None) -> Path:
+def resolve_llama_cpp(
+    llama_cpp_dir: str | Path | None = None, script: str = CONVERT_SCRIPT
+) -> Path:
     """Locate a llama.cpp checkout from config, then `$LLAMA_CPP_DIR`."""
     root = llama_cpp_dir or os.environ.get("LLAMA_CPP_DIR")
     if not root:
@@ -27,10 +32,8 @@ def resolve_llama_cpp(llama_cpp_dir: str | Path | None = None) -> Path:
         )
 
     root = Path(root).expanduser()
-    if not (root / CONVERT_SCRIPT).is_file():
-        raise ValueError(
-            f"{root} is not a llama.cpp checkout ({CONVERT_SCRIPT} missing)."
-        )
+    if not (root / script).is_file():
+        raise ValueError(f"{root} is not a llama.cpp checkout ({script} missing).")
 
     return root
 
@@ -136,6 +139,46 @@ def preflight(model_dir: Path, output_dir: Path) -> None:
         )
 
 
+def lora_preflight(adapter_dir: Path) -> None:
+    """Fail fast on adapters llama.cpp's LoRA converter rejects."""
+    config_path = adapter_dir / ADAPTER_CONFIG
+    if not config_path.is_file():
+        raise ValueError(f"No {ADAPTER_CONFIG} in {adapter_dir}, not a PEFT adapter.")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+
+    merge_instead = "Run `axolotl merge-lora` and export the merged model instead."
+
+    # The converter only pairs up lora_A/lora_B tensors; anything saved whole aborts it.
+    if config.get("use_dora"):
+        raise ValueError(f"llama.cpp cannot convert a DoRA adapter. {merge_instead}")
+
+    if modules := config.get("modules_to_save"):
+        raise ValueError(
+            f"llama.cpp cannot convert an adapter with "
+            f"modules_to_save={sorted(modules)}. {merge_instead}"
+        )
+
+    # llama.cpp scales every tensor by the global lora_alpha / rank, so any other scaling is silently lost.
+    if config.get("use_rslora"):
+        raise ValueError(f"llama.cpp cannot convert an rsLoRA adapter. {merge_instead}")
+
+    if config.get("alpha_pattern"):
+        raise ValueError(
+            f"llama.cpp cannot convert an adapter with alpha_pattern. {merge_instead}"
+        )
+
+
+def _lora_base_dir(adapter_dir: Path, scratch: Path) -> Path:
+    """The dir to pass as `--base`, with the base config's quantization_config removed."""
+    config = json.loads((adapter_dir / "config.json").read_text(encoding="utf-8"))
+    # The converter rejects quantized bases, though a LoRA export never reads base weights.
+    if config.pop("quantization_config", None) is None:
+        return adapter_dir
+
+    (scratch / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    return scratch
+
+
 def _run(cmd: list[str], output: Path) -> None:
     LOG.info("Running: %s", " ".join(cmd))
     try:
@@ -195,3 +238,46 @@ def export_gguf(
         outputs.append(quantized)
 
     return outputs
+
+
+def export_lora_gguf(
+    adapter_dir: str | Path,
+    outfile: str,
+    *,
+    outtype: str = "f32",
+    llama_cpp_dir: str | Path | None = None,
+) -> list[Path]:
+    """
+    Convert a PEFT LoRA adapter to a standalone GGUF, loaded at runtime on top of a
+    GGUF of the same base model (`llama-cli -m base.gguf --lora adapter.gguf`).
+
+    Returns:
+        Path of the written GGUF, as a single-element list.
+    """
+    adapter_dir = Path(adapter_dir)
+    if not adapter_dir.is_dir():
+        raise ValueError(f"Adapter directory does not exist: {adapter_dir}")
+
+    llama_cpp = resolve_llama_cpp(llama_cpp_dir, LORA_CONVERT_SCRIPT)
+
+    converted = Path(outfile.replace("{ftype}", outtype))
+    converted.parent.mkdir(parents=True, exist_ok=True)
+    lora_preflight(adapter_dir)
+
+    cmd = [
+        sys.executable,
+        str(llama_cpp / LORA_CONVERT_SCRIPT),
+        str(adapter_dir),
+        "--outfile",
+        str(converted),
+        "--outtype",
+        outtype,
+    ]
+    LOG.info("Converting %s to a GGUF LoRA (%s)...", adapter_dir, outtype)
+    with tempfile.TemporaryDirectory() as scratch:
+        # Without `--base` the converter fetches the base config from the Hub.
+        if (adapter_dir / "config.json").is_file():
+            cmd += ["--base", str(_lora_base_dir(adapter_dir, Path(scratch)))]
+        _run(cmd, converted)
+
+    return [converted]
