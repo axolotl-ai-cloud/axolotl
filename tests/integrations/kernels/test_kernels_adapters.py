@@ -109,6 +109,14 @@ def test_plugin_dispatches_to_active_adapters(monkeypatch):
         a.post_model_load.assert_called_once_with(cfg, model)
 
 
+@pytest.mark.parametrize("flag", ["use_scattermoe", "use_sonicmoe"])
+def test_plugin_rejects_expert_kernels_the_model_declares_unsupported(flag):
+    with pytest.raises(ValueError, match="softcapped SwiGLU"):
+        KernelsPlugin().pre_model_load(
+            Cfg(model_config_type="inkling2", **{flag: True})
+        )
+
+
 def test_plugin_caches_adapter_discovery(monkeypatch):
     calls = {"n": 0}
 

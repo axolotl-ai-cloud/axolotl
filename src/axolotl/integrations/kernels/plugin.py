@@ -315,6 +315,17 @@ class KernelsPlugin(BasePlugin):
         """
         ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
 
+        if cfg.use_scattermoe or cfg.use_sonicmoe:
+            from axolotl.model_support import check_capability, get_model_support
+
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "expert_kernels",
+                cfg.model_config_type,
+                feature="scattermoe/sonicmoe expert kernels",
+                hint="Set use_scattermoe: false and use_sonicmoe: false.",
+            )
+
         if cfg.use_scattermoe:
             from axolotl.integrations.kernels.grouped_mode import (
                 configure_moe_grouped_mode,
