@@ -15,8 +15,10 @@ from pydantic import (
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_tpu
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.activation_checkpointing import (
+    OFFLOAD_TARGETS,
     migrate_legacy_checkpointing_keys,
 )
 from axolotl.utils.schemas.enums import (
@@ -94,6 +96,28 @@ _LORA_KERNEL_FLAGS = (
 )
 
 
+_TPU_UNSUPPORTED_OPTIONS = {
+    "load_in_8bit": "bitsandbytes needs CUDA.",
+    "load_in_4bit": "bitsandbytes needs CUDA.",
+    "flash_attention": "use `attn_implementation: sdpa`.",
+    "xformers_attention": "use `attn_implementation: sdpa`.",
+    "deepspeed": "training runs on a single chip.",
+    "fsdp": "training runs on a single chip.",
+    "fsdp_config": "training runs on a single chip.",
+    "rl": "only supervised fine-tuning is supported so far.",
+    "sample_packing": "packed batches change shape every step.",
+    "batch_flattening": "flattened batches change shape every step.",
+    "torch_compile": "not yet validated with TorchTPU's `tpu` compile backend.",
+    "gpu_memory_limit": "device_map planning does not see TPU memory.",
+    "max_memory": "device_map planning does not see TPU memory.",
+    **dict.fromkeys(_LORA_KERNEL_FLAGS, "the LoRA kernels are Triton-only."),
+}
+_TPU_UNSUPPORTED_PLUGIN_MODULES = (
+    "axolotl.integrations.liger.",
+    "axolotl.integrations.cut_cross_entropy.",
+)
+
+
 def _float32_with_autocast(get: Callable[[str], Any]) -> bool:
     return bool(get("float32")) and (get("bf16") is True or get("fp16") is True)
 
@@ -106,6 +130,8 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     validators that must predict its outcome.
     """
     if get("rl") or get("nvfp4_merge_aware") or get("lora_merge_aware"):
+        return False
+    if is_tpu():
         return False
     adapter = get("adapter")
     if adapter not in ("lora", "qlora"):
@@ -2019,6 +2045,80 @@ class SystemValidationMixin:
                 raise NotImplementedError(
                     "tf32 dtype is currently not supported in Ascend npu, please disable this configuration"
                 )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_tpu_config(cls, data):
+        if not is_tpu():
+            return data
+
+        for key, reason in _TPU_UNSUPPORTED_OPTIONS.items():
+            # the loader treats any fsdp_config block, even an empty one, as FSDP
+            present = (
+                data.get(key) is not None if key == "fsdp_config" else data.get(key)
+            )
+            if present:
+                raise NotImplementedError(f"`{key}` is not supported on TPU: {reason}")
+        for key in (
+            "tensor_parallel_size",
+            "context_parallel_size",
+            "expert_parallel_size",
+        ):
+            if (data.get(key) or 1) > 1:
+                raise NotImplementedError(
+                    f"`{key}` > 1 is not supported on TPU: training runs on a single chip."
+                )
+        if data.get("tf32") is True:
+            raise NotImplementedError(
+                "`tf32` is not supported on TPU: TPUs have no TF32 mode."
+            )
+        if data.get("adapter") == "qlora":
+            raise NotImplementedError(
+                "`adapter: qlora` is not supported on TPU: bitsandbytes needs CUDA. "
+                "Use `adapter: lora`."
+            )
+        if "bit" in str(data.get("optimizer") or ""):
+            raise NotImplementedError(
+                f"Optimizer {data['optimizer']!r} is not supported on TPU: bitsandbytes needs CUDA."
+            )
+        attn_impl = data.get("attn_implementation")
+        if attn_impl and attn_impl not in ("eager", "sdpa"):
+            raise NotImplementedError(
+                f"attn_implementation={attn_impl!r} is not supported on TPU. "
+                "Use 'eager' or 'sdpa'."
+            )
+        checkpointing = data.get("activation_checkpointing")
+        offload = (
+            checkpointing.get("offload") if isinstance(checkpointing, dict) else None
+        )
+        if isinstance(offload, dict) and any(
+            offload.get(target) not in (None, False, "none")
+            for target in OFFLOAD_TARGETS
+        ):
+            raise NotImplementedError(
+                "`activation_checkpointing.offload` is not supported on TPU: it relies on "
+                "CUDA streams."
+            )
+
+        from axolotl.integrations.base import normalize_plugin_name
+
+        for plugin in data.get("plugins") or []:
+            if normalize_plugin_name(plugin).startswith(
+                _TPU_UNSUPPORTED_PLUGIN_MODULES
+            ):
+                raise NotImplementedError(
+                    f"Plugin {plugin!r} is not supported on TPU: it uses CUDA kernels."
+                )
+
+        if data.get("pad_to_sequence_len") is False:
+            LOG.warning(
+                "Ignoring `pad_to_sequence_len: false` on TPU: every batch is padded to "
+                "`sequence_len` so the input shape never changes."
+            )
+        data["pad_to_sequence_len"] = True
+        data["dataloader_pin_memory"] = False
 
         return data
 

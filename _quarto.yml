@@ -524,6 +524,7 @@ website:
             - docs/runcrate.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
+            - docs/tpu.qmd
 
         - section: "How To Guides"
           contents:
