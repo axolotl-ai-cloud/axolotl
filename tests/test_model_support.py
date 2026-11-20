@@ -538,6 +538,60 @@ class TestK2HorizonSupport:
         assert "k2_horizon" in SUPPORTED_MULTIPACK_MODEL_TYPES
 
 
+class TestInklingSupport:
+    """Built-in Inkling / Inkling 2 descriptors: capability guards and checkpoint check."""
+
+    @pytest.mark.parametrize(
+        "model_type,name",
+        [("inkling_mm_model", "InklingSupport"), ("inkling2", "Inkling2Support")],
+    )
+    def test_registered_and_multimodal_family(self, model_type, name):
+        support = get_model_support(model_type)
+        assert type(support).__name__ == name
+        assert resolve_model_support(support).family == "image_text_to_text"
+
+    @pytest.mark.parametrize("model_type", ["inkling_mm_model", "inkling2"])
+    @pytest.mark.parametrize(
+        "capability", ["cut_cross_entropy", "liger", "lora_kernels", "context_parallel"]
+    )
+    def test_unsupported_features_are_rejected(self, model_type, capability):
+        with pytest.raises(ValueError, match=model_type):
+            check_capability(get_model_support(model_type), capability, model_type)
+
+    def test_expert_kernels_rejected_only_for_softcapped_swiglu(self):
+        check_capability(
+            get_model_support("inkling_mm_model"), "expert_kernels", "inkling_mm_model"
+        )
+        with pytest.raises(ValueError, match="softcapped SwiGLU"):
+            check_capability(
+                get_model_support("inkling2"), "expert_kernels", "inkling2"
+            )
+
+    @pytest.mark.parametrize(
+        "quantization_config,raises",
+        [
+            ({"quant_method": "modelopt", "quant_algo": "NVFP4"}, True),
+            ({"quant_method": "fp8", "weight_block_size": [1, 32]}, False),
+            (None, False),
+        ],
+    )
+    def test_modelopt_checkpoint_is_refused(self, quantization_config, raises):
+        from types import SimpleNamespace
+
+        context = ModelHookContext(
+            cfg=DictDefault(),
+            model_config=SimpleNamespace(quantization_config=quantization_config),
+        )
+        run = lambda: run_model_support_hooks(  # noqa: E731
+            get_model_support("inkling2"), ModelHookPhase.CONFIGURE_RUN, context
+        )
+        if raises:
+            with pytest.raises(ValueError, match="Inkling-2-Small-MXFP8"):
+                run()
+        else:
+            run()
+
+
 class TestGlm5NextSupport:
     """Built-in GLM-5.3-Flash descriptor: packing patch plus capability guards."""
 

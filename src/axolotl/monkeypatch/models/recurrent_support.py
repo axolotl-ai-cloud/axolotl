@@ -35,7 +35,10 @@ PACKING_PATCHED = frozenset(
 # recurrent model types whose mixers never see a document boundary
 PACKING_UNSUPPORTED = frozenset(
     {
-        "inkling",
+        "inkling2",
+        "inkling2_text",
+        "inkling_mm_model",
+        "inkling_text",
         "jamba",
         "minimax",
         "olmo_hybrid",
