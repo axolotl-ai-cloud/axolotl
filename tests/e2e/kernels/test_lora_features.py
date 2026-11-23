@@ -814,6 +814,9 @@ class TestTiedEmbeddings:
 class TestQuantizedModels:
     """Test kernels with quantized base weights."""
 
+    @pytest.mark.skip_xpu(
+        reason="NF4 dequantize calls torch._C._cuda_getCurrentRawStream, which XPU builds lack"
+    )
     def test_nf4_qlora_forward_backward(self):
         """NF4 QLoRA with kernel patches."""
         from peft import PeftModelForCausalLM
@@ -1039,7 +1042,7 @@ class TestDoraCacheInvalidation:
 
         # Simulate optimizer in-place update (pointer stays same, content changes)
         old_ptr = A.data_ptr()
-        A.data.add_(torch.randn_like(A) * 0.1)
+        A.add_(torch.randn_like(A) * 0.1)
         assert A.data_ptr() == old_ptr, "Pointer should not change for in-place ops"
 
         # Second call must detect the change and recompute

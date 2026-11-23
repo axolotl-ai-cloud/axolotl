@@ -7,6 +7,7 @@ import json
 import os
 import unittest
 
+import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.common.datasets import load_datasets
@@ -27,6 +28,7 @@ MAX_SYNCS_PER_MICROSTEP = 1
 class TestSyncProfiler(unittest.TestCase):
     """Count syncing CUDA ops over a few non-logging micro-steps."""
 
+    @pytest.mark.skip_xpu(reason="CUDA-only: the sync profiler only supports CUDA")
     @with_temp_dir
     def test_packed_flash_attention_lora_sync_floor(self, temp_dir):
         cfg = DictDefault(

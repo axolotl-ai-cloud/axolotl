@@ -83,7 +83,7 @@ Axolotl). A test that exercises two plugins together stays in `tests/integration
 General CPU jobs run `tests/integrations/` with
 `-m "not gpu and not slow and not distributed_cpu"` and GPU jobs with `-m gpu`.
 Distributed CPU tests run separately with `-m "distributed_cpu and not slow"`.
-`tests/integrations/kernels/` belongs to the kernel lane and is excluded from the CPU jobs as a directory. Mark a test that needs CUDA with
+`tests/integrations/kernels/` belongs to the kernel lane and is excluded from the CPU jobs as a directory. Mark a test that needs a GPU with
 `@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
 `skipif` without the marker is flagged by `tests/conftest.py`, and
 `AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
@@ -110,6 +110,7 @@ can run on CPU or older CUDA GPUs; only tests invoking kernels that need SM90+
 | Multiple CPU processes with gloo | `distributed_cpu`; NF4 loading/sharding tests use `nf4_distributed` instead | Dedicated distributed CPU job in `.github/workflows/tests.yml` |
 | One CUDA GPU, supported on L40S | `gpu`; model smoke tests in `tests/e2e/`, plugin tests in `tests/integrations/<plugin>/` | `cicd/cicd.sh` |
 | One CUDA GPU, kernel correctness/parity | `gpu`; use `tests/e2e/kernels/` or `tests/integrations/kernels/` | `cicd/cicd_cuda_kernels.sh` |
+| One Intel GPU (XPU) | Same paths and markers as the two lanes above; add `skip_xpu(reason=...)` to a test that cannot run on XPU yet | `cicd/cicd_xpu.sh` on a self-hosted `xpu` runner |
 | One SM90+ GPU (Hopper or Blackwell) | `gpu_blackwell` (implies `gpu`), plus the precise capability guard | `cicd/cicd_blackwell.sh` on B200 |
 | Multiple CUDA GPUs | `gpu`, a device-count guard, and normally `tests/e2e/multigpu/` | `cicd/multigpu.sh` |
 | Multiple GPUs for NVFP4 | `nvfp4` and `gpu`, with capability and device-count guards | `cicd/nvfp4.sh` |
@@ -167,6 +168,23 @@ skipped are grouped by the label that routes them (`run-gpu-tests`, `run-gpu-slo
 report. The Tests run's last job, `Changed tests report`, previews the same report and
 annotations before Slow CPU or Slow GPU finish. To check a PR locally with `gh`, run
 `python cicd/verify_changed_tests.py --pr <number>`.
+
+### Running GPU tests on Intel GPUs (XPU)
+
+On a host with an Intel GPU, `bash cicd/setup_xpu_env.sh` creates `.venv-xpu` with the XPU build of
+PyTorch from the PyTorch XPU wheel index, leaving out the CUDA-only packages listed in
+`cicd/xpu-overrides.txt`. Then, from the repository root:
+
+```bash
+source .venv-xpu/bin/activate
+./cicd/cicd_xpu.sh
+```
+
+`cicd/cicd_xpu.sh` runs the paths of `cicd/cicd.sh` and `cicd/cicd_cuda_kernels.sh` and deselects tests marked
+`skip_xpu`. When a fix makes such a test pass on XPU, remove its marker in the same PR. The `Intel GPU`
+workflow runs the lane on a self-hosted runner labelled `xpu`, on manual dispatch or when a maintainer adds the
+`run-xpu-tests` label to a PR. A fork with its own `xpu` runner can enable the workflow by setting the repository
+variable `XPU_CI` to `true`.
 
 ## How to Contribute
 
