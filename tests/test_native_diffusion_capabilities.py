@@ -34,3 +34,11 @@ def test_native_diffusion_rejects_unverified_integrations(model_type, feature):
     assert isinstance(resolved.capabilities[feature], Unsupported)
     with pytest.raises(ValueError, match=f"{feature} is not supported"):
         check_capability(support, feature, model_type)
+
+
+def test_twotower_allows_expert_kernels():
+    support = get_model_support("nemotron_h_twotower")
+    assert isinstance(
+        resolve_model_support(support).capabilities["expert_kernels"], Experimental
+    )
+    check_capability(support, "expert_kernels", "nemotron_h_twotower")

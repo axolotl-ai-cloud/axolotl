@@ -8,11 +8,13 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.distributed as dist
-from transformers.distributed.tensor_parallel import (
-    ALL_PARALLEL_STYLES,
-    EpRouterParallel,
+from transformers.distributed import expert_parallel as hf_expert_parallel
+from transformers.distributed.expert_parallel import (
+    AllReduceEP,
+    EpDispatchExpertsParallel,
     MoEParamShard,
 )
+from transformers.distributed.tensor_parallel import ALL_PARALLEL_STYLES
 from transformers.integrations.moe import (
     ALL_EXPERTS_FUNCTIONS,
     batched_mm_experts_forward,
@@ -270,33 +272,37 @@ class TestRegistrationAndDetection:
 
 class TestTransformersExpertParallelPlan:
     def test_plan_styles_exist(self):
-        assert "grouped_gemm" in ALL_PARALLEL_STYLES
-        assert "ep_router" in ALL_PARALLEL_STYLES
         assert isinstance(ALL_PARALLEL_STYLES["grouped_gemm"], MoEParamShard)
         assert ALL_PARALLEL_STYLES["grouped_gemm"].shards_expert_dim is True
-        assert isinstance(ALL_PARALLEL_STYLES["ep_router"], EpRouterParallel)
+        assert isinstance(
+            ALL_PARALLEL_STYLES["ep_dispatch_experts"], EpDispatchExpertsParallel
+        )
 
-    def test_ep_router_sentinel_matches_normalize_sentinels(self):
-        mesh = SimpleNamespace(
-            get_local_rank=lambda: 1,
-            size=lambda: 2,
-            ndim=1,
-            get_group=lambda *a: None,
-        )
-        router = SimpleNamespace(num_experts=E)
-        logits = torch.zeros(3, E)
+    def test_all_reduce_ep_sentinel_matches_normalize_sentinels(self, monkeypatch):
+        identity = SimpleNamespace(apply=lambda tensor, group: tensor)
+        monkeypatch.setattr(hf_expert_parallel, "_AllReduceBackward", identity)
+        monkeypatch.setattr(hf_expert_parallel, "_AllReduceForward", identity)
+        seen = {}
+
+        def experts_forward(hidden_states, top_k_index, top_k_weights):
+            seen["index"], seen["weights"] = top_k_index, top_k_weights
+            return hidden_states
+
+        # __init__ reads process-group ranks; only the masking in __call__ is under test
+        ep = AllReduceEP.__new__(AllReduceEP)
+        ep.experts_forward = experts_forward
+        ep.num_local_experts = E // 2
+        ep.ep_mesh = SimpleNamespace(get_local_rank=lambda: 1, get_group=lambda: None)
         scores = torch.tensor([[0.5, 0.5], [0.3, 0.7], [0.2, 0.8]])
-        ind = torch.tensor([[0, 3], [1, 2], [2, 3]])
-        _, s_tf, i_tf = EpRouterParallel().transform_output_post_forward(
-            router, (logits, scores, ind), mesh
-        )
+        ep(torch.randn(3, H), torch.tensor([[0, 3], [1, 2], [2, 3]]), scores)
+
         i_ax, s_ax = _normalize_sentinels(
             torch.tensor([[-1, 1], [-1, 0], [0, 1]]), scores, E // 2
         )
-        assert torch.equal(i_tf, i_ax)
-        assert torch.equal(i_tf, torch.tensor([[2, 1], [2, 0], [0, 1]]))
-        assert torch.equal(s_tf, s_ax)
-        assert int(i_tf.max()) == E // 2
+        assert torch.equal(seen["index"], i_ax)
+        assert torch.equal(seen["index"], torch.tensor([[2, 1], [2, 0], [0, 1]]))
+        assert torch.equal(seen["weights"], s_ax)
+        assert int(seen["index"].max()) == E // 2
 
 
 class TestMoEParamShardMarksExpertParallel:

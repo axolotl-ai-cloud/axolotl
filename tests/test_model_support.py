@@ -1,5 +1,7 @@
 """Tests for the per-architecture model support registry."""
 
+from types import SimpleNamespace
+
 import pytest
 from transformers import AutoModelForImageTextToText
 
@@ -543,14 +545,21 @@ class TestInklingSupport:
 
     @pytest.mark.parametrize(
         "model_type,name",
-        [("inkling_mm_model", "InklingSupport"), ("inkling2", "Inkling2Support")],
+        [
+            ("inkling_mm_model", "InklingSupport"),
+            ("inkling_text", "InklingSupport"),
+            ("inkling2", "Inkling2Support"),
+            ("inkling2_text", "Inkling2Support"),
+        ],
     )
     def test_registered_and_multimodal_family(self, model_type, name):
         support = get_model_support(model_type)
         assert type(support).__name__ == name
         assert resolve_model_support(support).family == "image_text_to_text"
 
-    @pytest.mark.parametrize("model_type", ["inkling_mm_model", "inkling2"])
+    @pytest.mark.parametrize(
+        "model_type", ["inkling_mm_model", "inkling_text", "inkling2", "inkling2_text"]
+    )
     @pytest.mark.parametrize(
         "capability", ["cut_cross_entropy", "liger", "lora_kernels", "context_parallel"]
     )
@@ -558,13 +567,15 @@ class TestInklingSupport:
         with pytest.raises(ValueError, match=model_type):
             check_capability(get_model_support(model_type), capability, model_type)
 
-    def test_expert_kernels_rejected_only_for_softcapped_swiglu(self):
-        check_capability(
-            get_model_support("inkling_mm_model"), "expert_kernels", "inkling_mm_model"
-        )
+    @pytest.mark.parametrize("model_type", ["inkling_mm_model", "inkling_text"])
+    def test_expert_kernels_allowed_for_inkling(self, model_type):
+        check_capability(get_model_support(model_type), "expert_kernels", model_type)
+
+    @pytest.mark.parametrize("model_type", ["inkling2", "inkling2_text"])
+    def test_expert_kernels_rejected_for_softcapped_swiglu(self, model_type):
         with pytest.raises(ValueError, match="softcapped SwiGLU"):
             check_capability(
-                get_model_support("inkling2"), "expert_kernels", "inkling2"
+                get_model_support(model_type), "expert_kernels", model_type
             )
 
     @pytest.mark.parametrize(
@@ -572,16 +583,20 @@ class TestInklingSupport:
         [
             ({"quant_method": "modelopt", "quant_algo": "NVFP4"}, True),
             ({"quant_method": "fp8", "weight_block_size": [1, 32]}, False),
+            (SimpleNamespace(quant_method="modelopt"), True),
             (None, False),
         ],
     )
-    def test_modelopt_checkpoint_is_refused(self, quantization_config, raises):
-        from types import SimpleNamespace
-
-        context = ModelHookContext(
-            cfg=DictDefault(),
-            model_config=SimpleNamespace(quantization_config=quantization_config),
+    @pytest.mark.parametrize("as_mapping", [False, True])
+    def test_modelopt_checkpoint_is_refused(
+        self, quantization_config, raises, as_mapping
+    ):
+        model_config = (
+            {"quantization_config": quantization_config}
+            if as_mapping
+            else SimpleNamespace(quantization_config=quantization_config)
         )
+        context = ModelHookContext(cfg=DictDefault(), model_config=model_config)
         run = lambda: run_model_support_hooks(  # noqa: E731
             get_model_support("inkling2"), ModelHookPhase.CONFIGURE_RUN, context
         )

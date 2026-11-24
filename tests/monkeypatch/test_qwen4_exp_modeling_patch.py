@@ -13,8 +13,9 @@ from transformers.models.qwen4_exp.configuration_qwen4_exp import (  # noqa: E40
 
 def _torch_reference(dispatcher):
     """Unwrap a transformers hub-kernel ``Func`` back to its torch implementation."""
-    (cell,) = type(dispatcher).forward.__closure__
-    return cell.cell_contents.__wrapped__
+    forward = type(dispatcher).forward
+    cells = dict(zip(forward.__code__.co_freevars, forward.__closure__, strict=True))
+    return cells["func"].cell_contents.__wrapped__
 
 
 @pytest.fixture(autouse=True)

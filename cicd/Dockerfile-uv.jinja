@@ -32,7 +32,7 @@ RUN TORCH_PIN="torch==$(python -c 'import torch; print(torch.__version__)')" && 
 
 # Override with nightly HF packages for nightly builds
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
-        uv pip install "kernels>=0.17.2,<0.18"; \
+        uv pip install "kernels>=0.18.2,<0.19"; \
         uv pip install --no-deps \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \

@@ -376,7 +376,13 @@ def staged_nf4_loading(
             and "expert" in target_name.lower()
         )
         linear = isinstance(module, nn.Linear) and name == "weight"
-        original(model, target_name, value, *args, **kwargs)
+        if not value.is_meta and getattr(value, "quant_state", None) is not None:
+            # Transformers rejects the packed shape unless the module is Linear4bit;
+            # the weight is replaced below, so only the load bookkeeping is needed.
+            loading_info = args[0] if args else kwargs["loading_info"]
+            loading_info.missing_keys.discard(target_name)
+        else:
+            original(model, target_name, value, *args, **kwargs)
         if (linear or expert) and not value.is_meta:
             for key in excluded:
                 if nf4_skip_matches(target_name, key):

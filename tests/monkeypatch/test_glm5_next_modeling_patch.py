@@ -14,8 +14,10 @@ def _torch_reference(dispatcher):
     """Unwrap a kernel dispatcher to its torch fallback, with or without `kernels` installed."""
     forward = getattr(type(dispatcher), "forward", None)
     if forward is not None:
-        (cell,) = forward.__closure__
-        dispatcher = cell.cell_contents
+        cells = dict(
+            zip(forward.__code__.co_freevars, forward.__closure__, strict=True)
+        )
+        dispatcher = cells["func"].cell_contents
     return dispatcher.__wrapped__
 
 

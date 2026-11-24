@@ -20,7 +20,12 @@ import re
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 
-from axolotl.model_support.base import ModelSupport, Supported, Unsupported
+from axolotl.model_support.base import (
+    Experimental,
+    ModelSupport,
+    Supported,
+    Unsupported,
+)
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
     DiffusionNoise,
@@ -357,6 +362,11 @@ class NemotronTwoTowerSupport(ModelSupport):
             "lora_kernels": Unsupported("LoRA kernels patch single-tower attention."),
             "quantized_lora": Unsupported("Not validated for the two-tower model."),
             "fsdp": Unsupported("Not validated for the two-tower model."),
+            # Overrides the native-diffusion template's Unsupported: ScatterMoE matches
+            # eager on the denoiser experts (tests/e2e/kernels/test_scattermoe_twotower.py).
+            "expert_kernels": Experimental(
+                "ScatterMoE is validated against eager on the denoiser experts."
+            ),
         },
         strategies=ModelStrategyOverrides(auto_model_cls=_model_class),
         registrations=ModelRegistrationOverrides(

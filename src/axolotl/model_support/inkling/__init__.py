@@ -1,5 +1,7 @@
 """Thinking Machines Inkling (`inkling_mm_model`) and Inkling 2 (`inkling2`) support."""
 
+from collections.abc import Mapping
+
 from axolotl.model_support.base import ModelSupport, Unsupported
 from axolotl.model_support.profile import (
     ModelHookContext,
@@ -12,7 +14,7 @@ from axolotl.model_support.templates import IMAGE_TEXT_TO_TEXT
 
 _SHARED_CAPABILITIES = {
     "cut_cross_entropy": Unsupported(
-        "The ConditionalGeneration forward scales or softcaps the logits and slices "
+        "The LM head forward scales or softcaps the logits and slices "
         "them to unpadded_vocab_size, which no CCE forward reproduces."
     ),
     "liger": Unsupported("No Liger patch is validated for Inkling."),
@@ -27,10 +29,18 @@ _SHARED_CAPABILITIES = {
 
 
 def _refuse_modelopt_checkpoint(context: ModelHookContext) -> None:
-    qcfg = getattr(context.model_config, "quantization_config", None) or {}
-    if not isinstance(qcfg, dict):
-        qcfg = qcfg.to_dict()
-    if qcfg.get("quant_method") == "modelopt":
+    config = context.model_config
+    qcfg = (
+        config.get("quantization_config")
+        if isinstance(config, Mapping)
+        else getattr(config, "quantization_config", None)
+    )
+    quant_method = (
+        qcfg.get("quant_method")
+        if isinstance(qcfg, Mapping)
+        else getattr(qcfg, "quant_method", None)
+    )
+    if quant_method == "modelopt":
         raise ValueError(
             "This Inkling 2 checkpoint is quantized with modelopt (NVFP4 + MXFP8), "
             "which transformers cannot load. Use thinkingmachines/Inkling-2-Small-MXFP8."
@@ -41,7 +51,7 @@ def _refuse_modelopt_checkpoint(context: ModelHookContext) -> None:
 class InklingSupport(ModelSupport):
     """Descriptor for Inkling (`inkling_mm_model`) text/image/audio MoE checkpoints."""
 
-    model_types = ("inkling_mm_model",)
+    model_types = ("inkling_mm_model", "inkling_text")
     profile = ModelProfile(
         family=IMAGE_TEXT_TO_TEXT,
         capabilities=_SHARED_CAPABILITIES,
@@ -52,7 +62,7 @@ class InklingSupport(ModelSupport):
 class Inkling2Support(ModelSupport):
     """Descriptor for Inkling 2 (`inkling2`) text/image MoE checkpoints."""
 
-    model_types = ("inkling2",)
+    model_types = ("inkling2", "inkling2_text")
     profile = ModelProfile(
         family=IMAGE_TEXT_TO_TEXT,
         capabilities={
