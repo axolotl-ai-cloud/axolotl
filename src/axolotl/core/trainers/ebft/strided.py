@@ -400,12 +400,19 @@ class AxolotlStridedEBFTTrainer(
         # or deepcopy (full-parameter models / multi-GPU).
         first_param = next(unwrapped.parameters())
         original_device = first_param.device
+        device_type = self.accelerator.device.type
+        self._autocast_device_type = device_type
         actor_gpu = (
             original_device.index
-            if (original_device.type == "cuda" and original_device.index is not None)
+            if (
+                original_device.type == device_type
+                and original_device.index is not None
+            )
             else 0
         )
-        visible_gpus = torch.cuda.device_count()
+        visible_gpus = (
+            torch.accelerator.device_count() if torch.accelerator.is_available() else 0
+        )
 
         # Check if we can share weights (PEFT model on single GPU)
         from peft import PeftModel
@@ -420,7 +427,7 @@ class AxolotlStridedEBFTTrainer(
             # Share weights: use actor's base model with adapters disabled for
             # feature extraction. Saves ~2.5 GB (no deepcopy of base weights).
             self.feature_network = None  # no separate network
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(f"{device_type}:{actor_gpu}")
             self._feature_use_flex = self.use_flex_attention
             LOG.info(
                 "Feature network shares actor weights (PEFT disable_adapter). "
@@ -431,7 +438,7 @@ class AxolotlStridedEBFTTrainer(
             self.feature_network = copy.deepcopy(unwrapped)
             self.feature_network.to(dtype=torch.bfloat16)
             self._feature_device = torch.device(
-                f"cuda:{(actor_gpu + 1) % visible_gpus}"
+                f"{device_type}:{(actor_gpu + 1) % visible_gpus}"
             )
             LOG.info(f"Creating frozen feature network on {self._feature_device}...")
             self.feature_network.to(device=self._feature_device)
@@ -460,7 +467,7 @@ class AxolotlStridedEBFTTrainer(
                 torch_dtype=torch.bfloat16,
                 attn_implementation="eager",
             )
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(f"{device_type}:{actor_gpu}")
             self.feature_network.to(device=self._feature_device)
             self._feature_use_flex = False
             for param in self.feature_network.parameters():
@@ -471,7 +478,7 @@ class AxolotlStridedEBFTTrainer(
             # Single-GPU, non-PEFT: deepcopy on same device
             self.feature_network = copy.deepcopy(unwrapped)
             self.feature_network.to(dtype=torch.bfloat16)
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(f"{device_type}:{actor_gpu}")
             self.feature_network.to(device=self._feature_device)
             if _FLEX_ATTENTION_AVAILABLE:
                 if hasattr(self.feature_network.config, "_attn_implementation"):
@@ -625,7 +632,10 @@ class AxolotlStridedEBFTTrainer(
                 f"anchor_offset={anchor_offset}, "
                 f"need >= {gen_len + anchor_offset + stride}. Returning zero loss."
             )
-            dummy_loss = input_ids.float().mean() * 0.0
+            # built from the trainable weights so backward() still has a graph to walk
+            dummy_loss = (
+                sum(p.sum() for p in model.parameters() if p.requires_grad) * 0.0
+            )
             return (dummy_loss, None) if return_outputs else dummy_loss
 
         # --- Step 1: Generate strided blocks for n_samples ---
@@ -691,7 +701,9 @@ class AxolotlStridedEBFTTrainer(
                     mask_s = attn_mask  # BlockMask broadcasts over batch
                 pos_s = pos_ids[s_idx : s_idx + 1]
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                with torch.autocast(
+                    device_type=self._autocast_device_type, dtype=torch.bfloat16
+                ):
                     backbone_out = backbone(
                         seq_s,
                         attention_mask=mask_s,
@@ -714,7 +726,9 @@ class AxolotlStridedEBFTTrainer(
                 for i in range(0, region_h.shape[1], chunk_size):
                     h_chunk = region_h[:, i : i + chunk_size, :]
                     l_chunk = region_l[:, i : i + chunk_size]
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with torch.autocast(
+                        device_type=self._autocast_device_type, dtype=torch.bfloat16
+                    ):
                         logits_chunk = lm_head(h_chunk)
                     chunk_lp = F.log_softmax(logits_chunk.float(), dim=-1)
                     logps_s[
@@ -727,7 +741,9 @@ class AxolotlStridedEBFTTrainer(
             per_token_logps = torch.cat(per_token_logps_list, dim=0)
         else:
             # Fallback: full forward (non-standard model architecture)
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(
+                device_type=self._autocast_device_type, dtype=torch.bfloat16
+            ):
                 outputs = model(
                     full_sequences,
                     attention_mask=attn_mask,
@@ -904,7 +920,9 @@ class AxolotlStridedEBFTTrainer(
                     dtype=model_dtype,
                 )
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                with torch.autocast(
+                    device_type=self._autocast_device_type, dtype=torch.bfloat16
+                ):
                     output = model(
                         full_sequence,
                         attention_mask=dense_mask,
@@ -1035,7 +1053,9 @@ class AxolotlStridedEBFTTrainer(
         with (
             feature_ctx,
             attn_ctx,
-            torch.autocast(device_type="cuda", dtype=torch.bfloat16),
+            torch.autocast(
+                device_type=self._autocast_device_type, dtype=torch.bfloat16
+            ),
         ):
             was_training = feat_model.training
             feat_model.eval()
