@@ -94,7 +94,8 @@ def _maybe_truncate_layers(model) -> None:
                     if isinstance(v, list) and len(v) in (orig, orig + 1):
                         setattr(cfg_obj, k, v[: n + (len(v) - orig)])
             gc.collect()
-            torch.cuda.empty_cache()
+            if torch.accelerator.is_available():
+                torch.accelerator.empty_cache()
             LOG.warning("DSV4_TRUNCATE_LAYERS=%d: truncated decoder stack (debug)", n)
             break
 
