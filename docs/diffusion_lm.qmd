@@ -638,6 +638,22 @@ keep `eval_steps` and `save_steps` dividing `max_steps` so
 This mix is a reproducible starting point for the image record format, not a
 quality result.
 
+### Causal LMs
+
+The `causal_decision` plugin trains an autoregressive model on the same
+normalized records (same `diffusion_decision.*` dataset types). Each question
+becomes one example: the decision system prompt for that question, the state,
+and the answer line up to its label. Every question type is relabeled with
+letters, and a decision head reads the answer-letter logits: it starts as the
+`lm_head` rows for letters A-P (`num_options: 16`) plus a zero-initialized
+rank-`rank` correction, so step-0 probabilities equal the base model's. The
+loss is cross-entropy against soft targets (`set` targets spread uniformly over
+the set), and `shuffle` permutes choice order per record. The head is saved as
+`decision_head.pt` next to the adapter. After training,
+`axolotl.integrations.causal_decision.head.fit_temperatures` fits one
+temperature per question type on held-out logits.
+`examples/qwen3/decision-lora-0.6b.yaml` is the starting recipe.
+
 ## Converting a causal LM
 
 `diffusion_lm.from_causal_lm: true` trains an ordinary causal checkpoint with
