@@ -19,6 +19,9 @@ for name in ("torch", "transformers", "accelerate", "torchao", "deepspeed", "pef
     print(f"{name}=={importlib.metadata.version(name)}", flush=True)
 NVFP4_ENV
 
+# tests/e2e/multigpu/solo/test_ep_optmoe_nvfp4_lora.py needs the package and its DeepGEMM build
+bash cicd/install_optmoe.sh
+
 pytest -v --durations=10 -n0 -m "nvfp4 and not slow" \
   tests/e2e/multigpu/solo/ \
   --junitxml=nvfp4-junit.xml --cov=axolotl --cov-report=xml:nvfp4-coverage.xml

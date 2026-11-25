@@ -2361,13 +2361,14 @@ class ModelCompatibilityValidationMixin:
     def check_torch_expert_parallel_checkpointing(self):
         if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
             return self
-        if self._resolved_expert_parallel_backend() != "torch":
+        backend = self._resolved_expert_parallel_backend()
+        if backend not in ("torch", "optmoe"):
             return self
         # recompute has to replay the forward's routing through a SAC policy
         checkpointing = self.activation_checkpointing
         if checkpointing.enabled and checkpointing.reentrant:
             raise ValueError(
-                "expert_parallel_backend: torch requires non-reentrant activation "
+                f"expert_parallel_backend: {backend} requires non-reentrant activation "
                 "checkpointing (activation_checkpointing.reentrant: false): "
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
@@ -2381,6 +2382,72 @@ class ModelCompatibilityValidationMixin:
             raise ValueError(
                 "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
                 "torch (DeepEP dispatches the whole batch in one fused kernel)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_expert_parallel_optmoe(self):
+        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
+            return self
+        if getattr(self, "expert_parallel_backend", None) != "optmoe":
+            if (
+                getattr(self, "expert_parallel_optmoe_precision", None) or "auto"
+            ) != "auto":
+                LOG.warning(
+                    "expert_parallel_optmoe_precision only applies to "
+                    "expert_parallel_backend: optmoe; ignored."
+                )
+            return self
+        mode = getattr(self, "expert_parallel_optmoe_mode", None) or "auto"
+        precision = getattr(self, "expert_parallel_optmoe_precision", None) or "auto"
+        # the fused LoRA precisions need use_sonicmoe for the expert-LoRA forward (and
+        # nvfp4_lora for its loader), so that flag is not an ignored local kernel there
+        lora = getattr(self, "adapter", None) == "lora"
+        nvfp4_lora = precision.endswith("_lora") or (
+            lora
+            and (
+                precision == "auto"
+                or (
+                    precision in ("bf16", "mxfp8", "fp8")
+                    and getattr(self, "expert_parallel_optmoe_fused_lora", True)
+                    is not False
+                )
+            )
+        )
+        ignored = [
+            key
+            for key in ("use_sonicmoe", "use_scattermoe")
+            if getattr(self, key, False) and not (nvfp4_lora and key == "use_sonicmoe")
+        ]
+        if getattr(self, "experts_implementation", None) not in (
+            None,
+            "grouped_mm",
+            "expert_parallel",
+        ) and not (nvfp4_lora and self.experts_implementation == "sonicmoe"):
+            ignored.append(f"experts_implementation: {self.experts_implementation}")
+        if ignored and mode == "fused":
+            LOG.warning(
+                f"expert_parallel_optmoe_mode: fused fuses dispatch, experts and combine, "
+                f"so the local experts kernel ({', '.join(ignored)}) is ignored; it is used "
+                "only if optmoe falls back to the torch backend. Set "
+                "expert_parallel_optmoe_mode: dispatch (or auto) to run it on optmoe's "
+                "peer dispatch."
+            )
+        if (
+            mode == "dispatch"
+            and (getattr(self, "expert_parallel_optmoe_precision", None) or "auto")
+            != "auto"
+        ):
+            LOG.warning(
+                "expert_parallel_optmoe_precision only applies to "
+                "expert_parallel_optmoe_mode: fused; the dispatch mode moves BF16 rows "
+                "and the local experts kernel sets the compute precision. Ignored."
+            )
+        if (getattr(self, "expert_parallel_dispatch_chunks", None) or 1) > 1:
+            LOG.warning(
+                "expert_parallel_dispatch_chunks is ignored by expert_parallel_backend: "
+                "optmoe (the fused mode overlaps communication inside its kernels; the "
+                "dispatch mode moves the whole batch per layer)."
             )
         return self
 
