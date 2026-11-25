@@ -17,7 +17,7 @@ from typing import Any, Callable, Literal, Optional
 import datasets
 import safetensors
 import torch
-from accelerate.state import AcceleratorState
+from accelerate.state import AcceleratorState, PartialState
 from datasets import Dataset
 from peft import PeftModel
 from torch.utils.data import (
@@ -1075,6 +1075,9 @@ class AxolotlTrainer(
         use_configured_state = accelerator_config.get("use_configured_state", False)
         if not use_configured_state:
             AcceleratorState._reset_state(reset_partial_state=True)
+            # the reset drops the CPU choice TrainingArguments made for use_cpu
+            if self.args.use_cpu:
+                PartialState(cpu=True)
 
         super().create_accelerator_and_postprocess()
 
