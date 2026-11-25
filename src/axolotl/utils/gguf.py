@@ -13,8 +13,12 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 CONVERT_SCRIPT = "convert_hf_to_gguf.py"
+LORA_CONVERT_SCRIPT = "convert_lora_to_gguf.py"
 QUANTIZE_BIN_PATHS = ("build/bin/llama-quantize", "llama-quantize")
 WEIGHT_SUFFIXES = (".safetensors", ".bin")
+
+# Weight types accepted by llama.cpp's convert_lora_to_gguf.py (no tq1_0/tq2_0).
+LORA_OUTTYPES = frozenset({"f32", "f16", "bf16", "q8_0", "auto"})
 
 
 def resolve_llama_cpp(llama_cpp_dir: str | Path | None = None) -> Path:
@@ -195,3 +199,159 @@ def export_gguf(
         outputs.append(quantized)
 
     return outputs
+
+
+def is_adapter_dir(model_dir: str | Path) -> bool:
+    """Return whether *model_dir* holds a PEFT adapter (adapter_config.json, no merged/)."""
+    model_dir = Path(model_dir)
+    return (model_dir / "adapter_config.json").is_file()
+
+
+def _adapter_has_forbidden_tensors(adapter_dir: Path) -> list[str]:
+    """Return names of tensors llama.cpp's convert_lora_to_gguf.py cannot handle.
+
+    These are embed_tokens / lm_head tensors that appear when lora_modules_to_save
+    is used or tokens are added during fine-tuning. llama.cpp errors with
+    "Embeddings is present in the adapter".
+    """
+    forbidden: list[str] = []
+    for weights_file in ("adapter_model.safetensors", "adapter_model.bin"):
+        path = adapter_dir / weights_file
+        if not path.is_file():
+            continue
+        if path.suffix == ".safetensors":
+            try:
+                from safetensors import safe_open
+
+                with safe_open(path, framework="pt") as f:
+                    keys = list(f.keys())
+            except Exception:
+                continue
+        else:
+            try:
+                import torch
+
+                state = torch.load(path, map_location="cpu", weights_only=True)
+                keys = list(state.keys())
+            except Exception:
+                continue
+        for key in keys:
+            if "embed_tokens" in key or "lm_head" in key:
+                forbidden.append(key)
+    return forbidden
+
+
+def _adapter_has_dora(adapter_dir: Path) -> bool:
+    """Return whether the adapter uses DoRA (lora_magnitude_vector tensors)."""
+    for weights_file in ("adapter_model.safetensors", "adapter_model.bin"):
+        path = adapter_dir / weights_file
+        if not path.is_file():
+            continue
+        if path.suffix == ".safetensors":
+            try:
+                from safetensors import safe_open
+
+                with safe_open(path, framework="pt") as f:
+                    if any("lora_magnitude_vector" in k for k in f.keys()):
+                        return True
+            except Exception:
+                continue
+        else:
+            try:
+                import torch
+
+                state = torch.load(path, map_location="cpu", weights_only=True)
+                if any("lora_magnitude_vector" in k for k in state.keys()):
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def preflight_lora(adapter_dir: str | Path) -> None:
+    """Fail fast on adapters llama.cpp's convert_lora_to_gguf.py cannot convert."""
+    adapter_dir = Path(adapter_dir)
+
+    if not (adapter_dir / "adapter_config.json").is_file():
+        raise ValueError(
+            f"No adapter_config.json in {adapter_dir} — not a PEFT adapter directory."
+        )
+
+    forbidden = _adapter_has_forbidden_tensors(adapter_dir)
+    if forbidden:
+        sample = forbidden[:5]
+        raise ValueError(
+            f"Adapter {adapter_dir} contains embed_tokens/lm_head tensors "
+            f"({sample}), which llama.cpp cannot convert. These come from "
+            f"lora_modules_to_save or adding tokens during fine-tuning. "
+            f"Remove them before exporting."
+        )
+
+    if _adapter_has_dora(adapter_dir):
+        raise ValueError(
+            f"Adapter {adapter_dir} uses DoRA (lora_magnitude_vector tensors), "
+            f"which llama.cpp's convert_lora_to_gguf.py cannot handle. "
+            f"DoRA must be merged before exporting."
+        )
+
+
+def export_lora_gguf(
+    adapter_dir: str | Path,
+    outfile: str,
+    *,
+    outtype: str = "f32",
+    base_model: str | Path | None = None,
+    llama_cpp_dir: str | Path | None = None,
+) -> Path:
+    """
+    Convert a PEFT LoRA adapter to a standalone GGUF via llama.cpp's convert_lora_to_gguf.py.
+
+    The resulting .gguf is loaded at runtime on top of a base GGUF:
+    `llama-cli -m base-f16.gguf --lora my-adapter.gguf`.
+
+    Args:
+        adapter_dir: Path to the PEFT adapter directory.
+        outfile: Output path for the .gguf file.
+        outtype: Weight type for the LoRA tensors (f32, f16, bf16, q8_0, auto).
+        base_model: Path to the base model, passed as --base. If not given, the
+            converter reads base_model_name_or_path from adapter_config.json.
+        llama_cpp_dir: Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.
+
+    Returns:
+        Path of the written .gguf file.
+    """
+    adapter_dir = Path(adapter_dir)
+    if not adapter_dir.is_dir():
+        raise ValueError(f"Adapter directory does not exist: {adapter_dir}")
+
+    llama_cpp = resolve_llama_cpp(llama_cpp_dir)
+
+    if not (llama_cpp / LORA_CONVERT_SCRIPT).is_file():
+        raise ValueError(
+            f"{llama_cpp} does not contain {LORA_CONVERT_SCRIPT}. "
+            f"Update your llama.cpp checkout to a recent version."
+        )
+
+    preflight_lora(adapter_dir)
+
+    converted = Path(outfile)
+    converted.parent.mkdir(parents=True, exist_ok=True)
+
+    LOG.info("Converting LoRA adapter %s to GGUF (%s)...", adapter_dir, outtype)
+
+    cmd = [
+        sys.executable,
+        str(llama_cpp / LORA_CONVERT_SCRIPT),
+        str(adapter_dir),
+        "--outfile",
+        str(converted),
+        "--outtype",
+        outtype,
+    ]
+
+    if base_model is not None:
+        cmd.extend(["--base", str(base_model)])
+
+    _run(cmd, converted)
+
+    return converted
