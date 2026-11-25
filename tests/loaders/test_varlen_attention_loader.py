@@ -7,7 +7,11 @@ from axolotl.loaders.model import ModelLoader
 
 def test_native_varlen_loads_transformers_model_eagerly():
     loader = ModelLoader.__new__(ModelLoader)
-    loader.cfg = SimpleNamespace(attn_implementation="varlen", low_cpu_mem_usage=False)
+    loader.cfg = SimpleNamespace(
+        attn_implementation="varlen",
+        low_cpu_mem_usage=False,
+        gemma4_hybrid_attn_impl=None,
+    )
     loader.model_config = SimpleNamespace()
     loader.model_kwargs = {}
 
