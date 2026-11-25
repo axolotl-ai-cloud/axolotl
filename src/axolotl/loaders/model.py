@@ -1218,10 +1218,6 @@ class ModelLoader:
             "gemma4_unified",
         ):
             return hf_impl
-        if self.cfg.is_multimodal:
-            raise ValueError(
-                "gemma4_hybrid_attn_impl is text-only; use attn_implementation: sdpa."
-            )
         return {"": "sdpa", "text_config": hf_impl}
 
     def _resolve_flash_attention_4(self, hf_impl):
