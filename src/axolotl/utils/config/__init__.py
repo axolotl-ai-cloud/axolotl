@@ -190,6 +190,10 @@ def resolve_dtype(cfg):
             cfg.fp16 = True
         cfg.bf16 = False
     else:
+        # transformers rejects tf32 without CUDA; under ray the workers have the GPUs
+        if cfg.tf32 is True and not cfg.use_ray and not torch.cuda.is_available():
+            LOG.warning("tf32 requires a CUDA GPU; disabling tf32 for this run.")
+            cfg.tf32 = False
         if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
             torch.backends.fp32_precision = "tf32"
