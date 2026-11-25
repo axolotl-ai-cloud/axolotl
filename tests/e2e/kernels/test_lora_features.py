@@ -1020,35 +1020,27 @@ class TestDoRAEmbeddingNoDoubleScale:
 
 
 class TestDoraCacheInvalidation:
-    """Regression: DoRA weight norm cache must invalidate after in-place
-    param updates (optimizer steps), not just pointer changes."""
+    """Regression: DoRA weight norm cache must invalidate after optimizer
+    steps, including fused ones that don't bump the param's _version."""
 
-    def test_cache_invalidates_on_inplace_update(self):
+    def test_cache_invalidates_after_fused_optimizer_step(self):
         W = torch.randn(64, 64, dtype=DTYPE, device=DEVICE)
-        A = torch.randn(8, 64, dtype=DTYPE, device=DEVICE)
-        B = torch.randn(64, 8, dtype=DTYPE, device=DEVICE)
+        A = nn.Parameter(torch.randn(8, 64, dtype=DTYPE, device=DEVICE))
+        B = nn.Parameter(torch.randn(64, 8, dtype=DTYPE, device=DEVICE))
         magnitude = torch.randn(64, dtype=DTYPE, device=DEVICE).abs() + 0.1
         s = 2.0
 
-        # Clear any existing cache
-        if hasattr(magnitude, "_dora_cache"):
-            del magnitude._dora_cache
+        _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
 
-        # First call populates cache
-        result1 = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+        A.grad = torch.randn_like(A)
+        B.grad = torch.randn_like(B)
+        torch.optim.AdamW([A, B], lr=1.0, fused=True).step()
 
-        # Simulate optimizer in-place update (pointer stays same, content changes)
-        old_ptr = A.data_ptr()
-        A.data.add_(torch.randn_like(A) * 0.1)
-        assert A.data_ptr() == old_ptr, "Pointer should not change for in-place ops"
+        after_step = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+        del magnitude._dora_cache
+        fresh = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
 
-        # Second call must detect the change and recompute
-        result2 = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
-
-        # Results should differ since A changed
-        assert not torch.allclose(result1, result2, atol=1e-4), (
-            "DoRA scale should change after in-place param update — cache not invalidated!"
-        )
+        torch.testing.assert_close(after_step, fresh)
 
 
 @pytest.mark.parametrize("autocast_dtype", [torch.bfloat16, torch.float16])

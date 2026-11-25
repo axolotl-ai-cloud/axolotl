@@ -17,6 +17,7 @@ import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
 from torch.distributed.tensor import DTensor
+from torch.optim.optimizer import register_optimizer_step_post_hook
 
 from .quantize import dequantize
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
@@ -238,6 +239,16 @@ def _apply_dropout(
 
 
 _USE_TRITON_DORA: bool | None = None
+_OPTIMIZER_STEPS = 0
+
+
+def _count_optimizer_step(*_) -> None:
+    global _OPTIMIZER_STEPS
+    _OPTIMIZER_STEPS += 1
+
+
+# Fused optimizers and FSDP2's all-gathered params don't bump _version.
+register_optimizer_step_post_hook(_count_optimizer_step)
 
 
 def _should_use_triton_dora() -> bool:
@@ -272,12 +283,11 @@ def _compute_dora_scale(
         mag_norm_scale: [out_features] tensor = magnitude / ||W + s * B @ A||_2
     """
     # Check cache on magnitude tensor (avoids expensive norm recomputation)
-    # Use tensor._version which increments on any in-place modification
-    # (data_ptr doesn't change when optimizers update params in-place)
+    cache_key = (_OPTIMIZER_STEPS, A._version, B._version)
     cache = getattr(magnitude, "_dora_cache", None)
     if cache is not None:
-        cached_a_ver, cached_b_ver, cached_norm = cache
-        if cached_a_ver == A._version and cached_b_ver == B._version:
+        cached_key, cached_norm = cache
+        if cached_key == cache_key:
             return magnitude.to(dtype) / cached_norm
 
     # Full recomputation - try Triton first
@@ -286,7 +296,7 @@ def _compute_dora_scale(
 
         result = triton_dora_scale(W, W_quant, A, B, s, magnitude, dtype)
         weight_norm = (magnitude.to(dtype) / result).detach()
-        magnitude._dora_cache = (A._version, B._version, weight_norm)
+        magnitude._dora_cache = (cache_key, weight_norm)
         return result
 
     # PyTorch fallback
@@ -296,39 +306,7 @@ def _compute_dora_scale(
     weight_norm = torch.linalg.norm(combined, dim=1).to(dtype)
     weight_norm = weight_norm.detach()
 
-    magnitude._dora_cache = (A._version, B._version, weight_norm)
-
-    return magnitude.to(dtype) / weight_norm
-
-
-def _compute_dora_scale_cached(
-    proj: nn.Module,
-    W: torch.Tensor,
-    W_quant: QuantState | torch.Tensor | None,
-    A: torch.Tensor,
-    B: torch.Tensor,
-    s: float,
-    magnitude: torch.Tensor,
-    dtype: torch.dtype,
-) -> torch.Tensor:
-    """Compute DoRA scale with caching. Recomputes only when LoRA params change.
-
-    Caches the weight norm on the projection module. The cache is invalidated
-    when LoRA A/B data pointers change (indicating an optimizer step occurred).
-    """
-    cache = getattr(proj, "_dora_norm_cache", None)
-    if cache is not None:
-        cached_a_ver, cached_b_ver, cached_norm = cache
-        if cached_a_ver == A._version and cached_b_ver == B._version:
-            return magnitude.to(dtype) / cached_norm
-
-    # Cache miss - full recomputation
-    W_full = dequantize(W.t(), W_quant).t().to(dtype)
-    lora_weight = B.to(dtype) @ A.to(dtype)
-    combined = W_full + s * lora_weight
-    weight_norm = torch.linalg.norm(combined, dim=1).to(dtype).detach()
-
-    proj._dora_norm_cache = (A._version, B._version, weight_norm)
+    magnitude._dora_cache = (cache_key, weight_norm)
 
     return magnitude.to(dtype) / weight_norm
 
