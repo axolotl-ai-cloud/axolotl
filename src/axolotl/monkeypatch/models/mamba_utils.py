@@ -191,7 +191,7 @@ def patch_model_forward_seq_idx(model_cls) -> None:
         if position_ids is None and len(args) > 2:
             position_ids = args[2]
 
-        past_key_values = kwargs.get("past_key_values")
+        past_key_values = kwargs.get("cache", kwargs.get("past_key_values"))
         if past_key_values is None and len(args) > 3:
             past_key_values = args[3]
 

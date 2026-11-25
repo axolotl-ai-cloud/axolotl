@@ -19,14 +19,8 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-ORIGINAL_EVAL_CODE = {
-    "list": 'metrics[f"{metric_key_prefix}_loss"] = np.concatenate(all_losses).mean().item()',
-    "array": 'metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()',
-}
-PATCHED_EVAL_CODE = {
-    "list": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(np.concatenate(all_losses)).item()',
-    "array": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(all_losses).item()',
-}
+ORIGINAL_EVAL_CODE = 'metrics[f"{metric_key_prefix}_loss"] = losses.mean().item()'
+PATCHED_EVAL_CODE = 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(losses).item()'
 
 ORIGINAL_MAYBE_CODE = (
     "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).mean().item()"
@@ -41,7 +35,7 @@ def check_evaluation_loop_is_patchable() -> bool:
         evaluation_loop_source = Trainer._original_evaluation_loop
     else:
         evaluation_loop_source = inspect.getsource(Trainer.evaluation_loop)
-    return all(value in evaluation_loop_source for value in ORIGINAL_EVAL_CODE.values())
+    return ORIGINAL_EVAL_CODE in evaluation_loop_source
 
 
 def patch_evaluation_loop():
@@ -59,12 +53,9 @@ def patch_evaluation_loop():
     Trainer._original_evaluation_loop = evaluation_loop_source
     evaluation_loop_source, _ = detab_code(evaluation_loop_source)
 
-    # Apply the nanmean patches
+    # Apply the nanmean patch
     evaluation_loop_source = evaluation_loop_source.replace(
-        ORIGINAL_EVAL_CODE["list"], PATCHED_EVAL_CODE["list"]
-    )
-    evaluation_loop_source = evaluation_loop_source.replace(
-        ORIGINAL_EVAL_CODE["array"], PATCHED_EVAL_CODE["array"]
+        ORIGINAL_EVAL_CODE, PATCHED_EVAL_CODE
     )
 
     # Rename the function to avoid conflicts

@@ -1401,8 +1401,12 @@ class AxolotlTrainer(
 
     # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
-        # If we are executing this function, we are the process zero, so we don't check for that.
         output_dir = output_dir if output_dir is not None else self.args.output_dir
+        # save_model calls _save on every rank; non-writers only stay to join the load-time TP gathers
+        if not self.args.should_save and not getattr(
+            self, "is_distributed_loading_by_transformers", False
+        ):
+            return
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
         self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
@@ -1458,7 +1462,7 @@ class AxolotlTrainer(
                     is_main_process=self.accelerator.is_main_process,
                     **save_kwargs,
                 )
-            else:
+            elif self.args.should_save:
                 LOG.info(
                     "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
                 )
@@ -1474,6 +1478,9 @@ class AxolotlTrainer(
                 is_main_process=self.accelerator.is_main_process,
                 **save_kwargs,
             )
+
+        if not self.args.should_save:
+            return
 
         if self.processing_class is not None:
             self.processing_class.save_pretrained(output_dir)

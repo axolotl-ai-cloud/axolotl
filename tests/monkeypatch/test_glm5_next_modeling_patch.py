@@ -1,5 +1,7 @@
 """Tests for the GLM-5.3-Flash (glm5_next) sample-packing monkeypatch."""
 
+import inspect
+
 import pytest
 import torch
 
@@ -14,9 +16,8 @@ def _torch_reference(dispatcher):
     """Unwrap a kernel dispatcher to its torch fallback, with or without `kernels` installed."""
     forward = getattr(type(dispatcher), "forward", None)
     if forward is not None:
-        (cell,) = forward.__closure__
-        dispatcher = cell.cell_contents
-    return dispatcher.__wrapped__
+        dispatcher = inspect.getclosurevars(forward).nonlocals["func"]
+    return getattr(dispatcher, "__wrapped__", dispatcher)
 
 
 @pytest.fixture(autouse=True)

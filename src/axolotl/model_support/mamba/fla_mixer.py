@@ -90,7 +90,7 @@ def _packed_forward(self, hidden_states, *args, **kwargs):
     segments = kwargs.pop("_axolotl_segments", None)
     if segments is None:
         return original(hidden_states, *args, **kwargs)
-    if args or kwargs.get("cache_params") is not None:
+    if args or kwargs.get("cache") is not None:
         raise ValueError("Packed FLA Mamba requires uncached inputs")
     groups = []
     batch, length, _ = hidden_states.shape
@@ -173,15 +173,13 @@ class _FlaMixerView:
             MethodType(_adapter_cuda_forward, self), self, bindings
         )
 
-    def _forward(self, hidden_states, attention_mask=None, cache_params=None, **kwargs):
-        if cache_params is not None and cache_params.layers[self.layer_idx].record_past:
+    def _forward(self, hidden_states, attention_mask=None, cache=None, **kwargs):
+        if cache is not None and cache.layers[self.layer_idx].record_past:
             raise ValueError("FLA Mamba cached decoding does not support record_past")
-        previous = cache_params is not None and cache_params.has_previous_state(
-            self.layer_idx
-        )
+        previous = cache is not None and cache.has_previous_state(self.layer_idx)
         last_state = None
         if previous:
-            layer = cache_params.layers[self.layer_idx]
+            layer = cache.layers[self.layer_idx]
             if hidden_states.shape[1] != 1:
                 raise ValueError("FLA Mamba supports single-token cached decoding")
             last_state = {
@@ -197,14 +195,14 @@ class _FlaMixerView:
                 self.slow_forward if self._family == "mamba" else self.torch_forward
             )
         output, conv_state, recurrent_state = forward(
-            hidden_states, last_state, cache_params is not None, attention_mask
+            hidden_states, last_state, cache is not None, attention_mask
         )
-        if cache_params is not None:
+        if cache is not None:
             if not previous:
-                cache_params.update_conv_state(conv_state, self.layer_idx)
+                cache.update_conv_state(conv_state, self.layer_idx)
             else:
-                cache_params.layers[self.layer_idx].conv_states[0].copy_(conv_state)
-            cache_params.update_recurrent_state(recurrent_state, self.layer_idx)
+                cache.layers[self.layer_idx].conv_states[0].copy_(conv_state)
+            cache.update_recurrent_state(recurrent_state, self.layer_idx)
         return output, None, None
 
 

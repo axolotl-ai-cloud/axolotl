@@ -45,13 +45,17 @@ def _make_linear_attention_forward(
 ):
     @wraps(original)
     @force_accelerate_hooks("conv1d")
-    def patched_forward(
-        self, hidden_states, cache_params=None, attention_mask=None, **kwargs
-    ):
+    def patched_forward(self, hidden_states, cache=None, attention_mask=None, **kwargs):
         kwargs.pop(POSITION_IDS_KEY, None)
         cu_seqlens = kwargs.pop(CU_SEQLENS_KEY, None)
         if cu_seqlens is None:
-            return original(self, hidden_states, cache_params, attention_mask, **kwargs)
+            return original(
+                self,
+                hidden_states,
+                cache=cache,
+                attention_mask=attention_mask,
+                **kwargs,
+            )
         if fla_causal_conv1d is None or fla_chunk_kda is None:
             # the torch fallbacks ignore cu_seqlens and would mix packed documents
             raise RuntimeError(
@@ -123,11 +127,11 @@ def _make_attention_forward(original):
 
 def _make_indexer_forward(original):
     @wraps(original)
-    def patched_forward(self, hidden_states, q_resid, attention_mask, past_key_values):
+    def patched_forward(self, hidden_states, q_resid, attention_mask, *args, **kwargs):
         position_ids = getattr(self, "packed_position_ids", None)
         if position_ids is None:
             return original(
-                self, hidden_states, q_resid, attention_mask, past_key_values
+                self, hidden_states, q_resid, attention_mask, *args, **kwargs
             )
         return packed_indexer_forward(
             self, hidden_states, q_resid, attention_mask, position_ids

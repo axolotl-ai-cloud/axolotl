@@ -55,7 +55,7 @@ activation_checkpointing:
   enabled: true
   reentrant: false
 logging_steps: 1
-attn_implementation: flash_attention_2
+attn_implementation: sdpa  # transformers >= 5.24 refuses flash attention on Gemma3ForConditionalGeneration
 
 warmup_ratio: 0.1
 evals_per_epoch: 1

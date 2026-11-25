@@ -26,7 +26,7 @@ output_dir: ./outputs/out_math_gemma/
 
 sequence_len: 4096
 sample_packing: true
-attn_implementation: flash_attention_2
+attn_implementation: sdpa  # transformers >= 5.24 refuses flash attention on Gemma3ForConditionalGeneration
 
 wandb_entity:
 wandb_watch:

@@ -516,7 +516,7 @@ def _install_requested_native_nvfp4_merge_aware_lora_linears(model) -> int:
     return installed
 
 
-_CACHE_KWARGS = ("past_key_values", "past_key_value", "layer_past")
+_CACHE_KWARGS = ("cache", "past_key_values", "past_key_value", "layer_past")
 
 
 def _drop_cache_kwargs(module, args, kwargs):

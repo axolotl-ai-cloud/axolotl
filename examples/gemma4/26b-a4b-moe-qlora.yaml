@@ -87,11 +87,9 @@ activation_checkpointing:
     all: cpu
 logging_steps: 1
 
-# Hybrid attention is the biggest throughput lever (~2x vs plain sdpa, which computes full attention
-# over the packed 4k sequence): FA2 (via the `kernels` lib, no source build) on the sliding-window
-# layers + SDPA on the global layers. flex_attention OOMs sm120 shared memory here.
-attn_implementation: flash_attention_2
-gemma4_hybrid_attn_impl: true
+# transformers >= 5.24 refuses flash attention (and so gemma4_hybrid_attn_impl) on multimodal Gemma 4.
+# flex_attention OOMs sm120 shared memory here.
+attn_implementation: sdpa
 
 # bnb-4bit MoE experts have no fused 4-bit-read kernel, so they're dequantized to bf16 by the
 # default 1-launch parallel_linear path (the dequant'd bf16 is recomputed in backward, not saved,

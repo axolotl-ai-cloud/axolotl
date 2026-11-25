@@ -23,6 +23,8 @@ import torch
 import torch.nn.functional as F
 from transformers.integrations.accelerate import force_accelerate_hooks
 
+from axolotl.monkeypatch.models.mamba_utils import kernelized_copy
+from axolotl.monkeypatch.utils import set_layer_forward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -103,7 +105,7 @@ def _make_text_model_forward(original):
 
     @wraps(original)
     def patched_forward(self, *args, **kwargs):
-        if kwargs.get("past_key_values") is None:
+        if kwargs.get("cache", kwargs.get("past_key_values")) is None:
             position_ids = text_position_ids(kwargs.get("position_ids"))
             if position_ids is not None:
                 cu_seqlens = get_cu_seqlens(position_ids)
@@ -121,7 +123,7 @@ def _patched_decoder_forward(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     attention_mask: Optional[torch.Tensor] = None,
     conv_mask: Optional[torch.Tensor] = None,
-    past_key_values=None,
+    cache=None,
     ple_input_ids: Optional[torch.LongTensor] = None,
     **kwargs,
 ) -> torch.FloatTensor:
@@ -133,7 +135,7 @@ def _patched_decoder_forward(
         hidden_states = hidden_states + self.ple(
             hidden_states,
             ple_input_ids,
-            past_key_values,
+            cache,
             conv_mask=conv_mask,
             position_ids=position_ids,
         )
@@ -144,7 +146,7 @@ def _patched_decoder_forward(
     if self.layer_type == "linear_attention":
         hidden_states = self.linear_attn(
             hidden_states,
-            cache_params=past_key_values,
+            cache=cache,
             attention_mask=conv_mask,
             cu_seqlens=cu_seqlens,
             **kwargs,
@@ -154,7 +156,7 @@ def _patched_decoder_forward(
             hidden_states,
             position_embeddings,
             attention_mask=attention_mask,
-            past_key_values=past_key_values,
+            cache=cache,
             **kwargs,
         )
 
@@ -178,7 +180,7 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
     def patched_forward(
         self,
         hidden_states: torch.Tensor,
-        cache_params=None,
+        cache=None,
         attention_mask: Optional[torch.Tensor] = None,
         cu_seqlens: Optional[torch.Tensor] = None,
         **kwargs,
@@ -188,8 +190,8 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
         )
 
         batch_size, seq_len, _ = hidden_states.shape
-        use_precomputed_states = cache_params is not None and (
-            cache_params.has_previous_state(self.layer_idx, state_idx=0)
+        use_precomputed_states = cache is not None and (
+            cache.has_previous_state(self.layer_idx, state_idx=0)
         )
         if use_precomputed_states:
             cu_seqlens = None
@@ -220,10 +222,10 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
         if (
             use_precomputed_states
             and seq_len == 1
-            and not cache_params.layers[self.layer_idx].record_past
+            and not cache.layers[self.layer_idx].record_past
         ):
-            conv_state = cache_params.layers[self.layer_idx].conv_states[0]
-            mixed_qkv = module.causal_conv1d_update(
+            conv_state = cache.layers[self.layer_idx].conv_states[0]
+            mixed_qkv = kernelized_copy(self, module.causal_conv1d_update)(
                 mixed_qkv.transpose(1, 2),
                 conv_state,
                 self.conv1d.weight.squeeze(1),
@@ -231,8 +233,8 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
                 self.activation,
             ).transpose(1, 2)
         elif cu_seqlens is not None:
-            if cache_params is not None:
-                cache_params.update_conv_state(
+            if cache is not None:
+                cache.update_conv_state(
                     mixed_qkv.transpose(1, 2),
                     self.layer_idx,
                     conv_kernel_size=self.conv_kernel_size,
@@ -247,17 +249,17 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
             mixed_qkv = mixed_qkv.reshape(batch_size, seq_len, -1)
         else:
             mixed_qkv = mixed_qkv.transpose(1, 2)
-            if cache_params is not None:
-                mixed_qkv = cache_params.update_conv_state(
+            if cache is not None:
+                mixed_qkv = cache.update_conv_state(
                     mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
                 )
-            mixed_qkv = module.causal_conv1d_fn(
+            mixed_qkv = kernelized_copy(self, module.causal_conv1d_fn)(
                 mixed_qkv,
                 self.conv1d.weight.squeeze(1),
                 self.conv1d.bias,
                 activation=self.activation,
             )
-            if cache_params is not None:
+            if cache is not None:
                 mixed_qkv = mixed_qkv[:, :, -seq_len:]
             mixed_qkv = mixed_qkv.transpose(1, 2)
 
@@ -277,22 +279,22 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         recurrent_state = (
-            cache_params.layers[self.layer_idx].recurrent_states[0]
+            cache.layers[self.layer_idx].recurrent_states[0]
             if use_precomputed_states
             else None
         )
         if use_precomputed_states and seq_len == 1:
-            core_attn_out, last_recurrent_state = (
-                module.torch_recurrent_gated_delta_rule(
-                    query,
-                    key,
-                    value,
-                    g=g,
-                    beta=beta,
-                    initial_state=recurrent_state,
-                    output_final_state=cache_params is not None,
-                    use_qk_l2norm_in_kernel=True,
-                )
+            core_attn_out, last_recurrent_state = kernelized_copy(
+                self, module.torch_recurrent_gated_delta_rule
+            )(
+                query,
+                key,
+                value,
+                g=g,
+                beta=beta,
+                initial_state=recurrent_state,
+                output_final_state=cache is not None,
+                use_qk_l2norm_in_kernel=True,
             )
         elif cu_seqlens is not None:
             core_attn_out, last_recurrent_state = fla_chunk_gated_delta_rule(
@@ -302,24 +304,26 @@ def _make_gated_delta_forward(module, fla_causal_conv1d, fla_chunk_gated_delta_r
                 g=flatten(g),
                 beta=flatten(beta),
                 initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
+                output_final_state=cache is not None,
                 use_qk_l2norm_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )
         else:
-            core_attn_out, last_recurrent_state = module.torch_chunk_gated_delta_rule(
+            core_attn_out, last_recurrent_state = kernelized_copy(
+                self, module.torch_chunk_gated_delta_rule
+            )(
                 query,
                 key,
                 value,
                 g=g,
                 beta=beta,
                 initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
+                output_final_state=cache is not None,
                 use_qk_l2norm_in_kernel=True,
             )
 
-        if cache_params is not None:
-            cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
+        if cache is not None:
+            cache.update_recurrent_state(last_recurrent_state, self.layer_idx)
 
         core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
         z = z.reshape(-1, self.head_v_dim)
@@ -365,21 +369,20 @@ def _patched_shift_right_ignore_eos(
 def _patched_ngram_forward(
     self,
     input_ids: torch.Tensor,
-    past_key_values=None,
+    cache=None,
     position_ids: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     input_ids = input_ids.long()
-    has_cached_context = (
-        past_key_values is not None
-        and past_key_values.has_previous_state(self.layer_idx, state_idx=2)
+    has_cached_context = cache is not None and cache.has_previous_state(
+        self.layer_idx, state_idx=2
     )
     if has_cached_context:
-        previous_context = past_key_values.layers[self.layer_idx].conv_states[2].clone()
+        previous_context = cache.layers[self.layer_idx].conv_states[2].clone()
     else:
         previous_context = input_ids.new_full(
             (input_ids.shape[0], self.context_len), self.eos_token_id
         )
-    if past_key_values is not None:
+    if cache is not None:
         input_ids_to_cache = input_ids
         if not has_cached_context and input_ids.shape[1] < self.context_len:
             input_ids_to_cache = torch.nn.functional.pad(
@@ -387,7 +390,7 @@ def _patched_ngram_forward(
                 (self.context_len - input_ids.shape[1], 0),
                 value=self.eos_token_id,
             )
-        _ = past_key_values.update_conv_state(
+        _ = cache.update_conv_state(
             input_ids_to_cache,
             self.layer_idx,
             state_idx=2,
@@ -440,14 +443,14 @@ def _patched_ngram_forward(
 def _patched_short_conv(
     self,
     hidden_states: torch.Tensor,
-    past_key_values=None,
+    cache=None,
     position_ids: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     seq_len = hidden_states.shape[1]
     hidden_states = hidden_states.transpose(1, 2)
 
-    if past_key_values is not None:
-        hidden_states = past_key_values.update_conv_state(
+    if cache is not None:
+        hidden_states = cache.update_conv_state(
             hidden_states,
             self.layer_idx,
             state_idx=1,
@@ -483,11 +486,11 @@ def _patched_ple_forward(
     self,
     hidden_states: torch.Tensor,
     input_ids: torch.Tensor,
-    past_key_values=None,
+    cache=None,
     conv_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    embeddings = self.ple_embedding(input_ids, past_key_values, position_ids)
+    embeddings = self.ple_embedding(input_ids, cache, position_ids)
     key_normed = self.norm_key(self.key_proj(embeddings)).unflatten(
         -1, (self.hc_count, self.hidden_size)
     )
@@ -508,9 +511,7 @@ def _patched_ple_forward(
         gated_value_normed = modeling.apply_mask_to_padding_states(
             gated_value_normed, conv_mask
         )
-    return gated_value + self._short_conv(
-        gated_value_normed, past_key_values, position_ids
-    )
+    return gated_value + self._short_conv(gated_value_normed, cache, position_ids)
 
 
 def patch_qwen4_exp_modeling_packing():
@@ -532,7 +533,7 @@ def patch_qwen4_exp_modeling_packing():
     modeling.Qwen4ExpTextModel.forward = _make_text_model_forward(
         _ORIGINALS["text_model"]
     )
-    modeling.Qwen4ExpTextDecoderLayer.forward = _patched_decoder_forward
+    set_layer_forward(modeling.Qwen4ExpTextDecoderLayer, _patched_decoder_forward)
     fla_causal_conv1d, fla_chunk_gated_delta_rule = _load_fla()
     modeling.Qwen4ExpTextGatedDeltaNet.forward = _make_gated_delta_forward(
         modeling, fla_causal_conv1d, fla_chunk_gated_delta_rule
@@ -589,13 +590,18 @@ def _contiguous_run_bounds(visible: torch.Tensor):
     return starts, counts, torch.equal(expected, visible)
 
 
+def _visible(attention_mask: torch.Tensor) -> torch.Tensor:
+    # upstream combines a bool selection with both bool (sdpa) and additive (eager) masks
+    return attention_mask if attention_mask.dtype == torch.bool else attention_mask == 0
+
+
 @torch.no_grad()
 def qsa_indexer_forward(
     self,
     hidden_states: torch.Tensor,
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     attention_mask: torch.Tensor,
-    past_key_values=None,
+    cache=None,
 ) -> torch.Tensor:
     """Vectorized replacement for the upstream per-(batch, query) Python loop.
 
@@ -616,8 +622,8 @@ def qsa_indexer_forward(
 
     # kv_length <= token_budget: top-k plus tail is the whole visible set, for any mask.
     # With a cache we still have to fall through to update_indexer below.
-    if attention_mask.shape[-1] <= self.token_budget and past_key_values is None:
-        return attention_mask[:, :1]
+    if attention_mask.shape[-1] <= self.token_budget and cache is None:
+        return _visible(attention_mask)[:, :1]
 
     full_cos, full_sin = position_embeddings
     current_cos, current_sin = (
@@ -638,21 +644,18 @@ def qsa_indexer_forward(
         q, cos=current_cos, sin=current_sin, unsqueeze_dim=2
     )
 
-    if past_key_values is not None:
-        raw_keys = past_key_values.update_indexer(raw_keys, self.layer_idx)
+    if cache is not None:
+        raw_keys = cache.update_indexer(raw_keys, self.layer_idx)
         if attention_mask.shape[-1] <= self.token_budget:
-            return attention_mask[:, :1]
+            return _visible(attention_mask)[:, :1]
 
-    visible = (
-        attention_mask if attention_mask.dtype == torch.bool else attention_mask == 0
-    )
-    visible = visible[:, 0]
+    visible = _visible(attention_mask)[:, 0]
     kv_length = visible.shape[-1]
 
     starts, counts, contiguous = _contiguous_run_bounds(visible)
     if not contiguous:
         return _qsa_original_forward()(
-            self, hidden_states, position_embeddings, attention_mask, past_key_values
+            self, hidden_states, position_embeddings, attention_mask, cache
         )
 
     num_blocks = counts // ratio
@@ -708,13 +711,7 @@ def qsa_indexer_forward(
         tail = torch.where(tail < (starts + counts).unsqueeze(-1), tail, kv_length)
         token_mask.scatter_(-1, tail, True)
 
-    selected_token_mask = token_mask[..., :kv_length].unsqueeze(1)
-    if attention_mask.is_floating_point():
-        min_dtype = torch.finfo(attention_mask.dtype).min
-        selected_token_mask = torch.where(
-            selected_token_mask, attention_mask.new_zeros(()), min_dtype
-        )
-    return selected_token_mask
+    return token_mask[..., :kv_length].unsqueeze(1)
 
 
 def patch_qwen4_exp_qsa_indexer():

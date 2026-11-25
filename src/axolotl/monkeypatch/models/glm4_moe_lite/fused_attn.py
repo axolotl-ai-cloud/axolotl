@@ -18,6 +18,8 @@ def _make_fused_forward(original_forward):
         past_key_values=None,
         **kwargs,
     ):
+        # transformers 5.24 passes the KV cache as `cache`
+        past_key_values = kwargs.pop("cache", past_key_values)
         cos, sin = position_embeddings
         if (
             not hidden_states.is_cuda
@@ -31,7 +33,7 @@ def _make_fused_forward(original_forward):
                 hidden_states,
                 position_embeddings,
                 attention_mask,
-                past_key_values=past_key_values,
+                past_key_values,
                 **kwargs,
             )
         from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
@@ -55,7 +57,7 @@ def _make_fused_forward(original_forward):
                 hidden_states,
                 position_embeddings,
                 attention_mask,
-                past_key_values=past_key_values,
+                past_key_values,
                 **kwargs,
             )
         q, k, v = fused_mla_prepare(

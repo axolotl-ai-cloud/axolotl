@@ -212,6 +212,16 @@ def set_module_name(model, name, value):
     setattr(parent, child_name, value)
 
 
+def set_layer_forward(layer_cls, forward) -> None:
+    """Assign ``forward`` and re-apply the checkpointing wrapper 5.24 adds at class creation."""
+    from transformers.modeling_layers import GradientCheckpointingLayer
+
+    layer_cls.forward = forward
+    wrap = GradientCheckpointingLayer.__dict__.get("__init_subclass__")
+    if wrap is not None and issubclass(layer_cls, GradientCheckpointingLayer):
+        wrap.__func__(layer_cls)
+
+
 def detab_code(code: str) -> Tuple[str, str]:
     try:
         spaces = re.match(r"([\s\t]{1,})", code).group(0)
