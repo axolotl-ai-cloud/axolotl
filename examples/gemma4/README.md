@@ -30,13 +30,14 @@ The 26B-A4B config uses ScatterMoE kernels via the transformers `ExpertsInterfac
 
 ## Limitations
 
-- **Flash Attention**: transformers >= 5.24 refuses flash attention on `Gemma4ForConditionalGeneration`, which the `google/gemma-4-*` checkpoints load through even for text-only training, so the examples use `sdpa` (or try `flex_attention`). `gemma4_hybrid_attn_impl: true` (FA2 on the sliding-window layers, `sdpa` on the `global_head_dim=512` layers) now only loads for text-only (`model_type: gemma4_text`) checkpoints.
+- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot serve Gemma 4's `global_head_dim=512` on their own. Use `flex_attention`, or `gemma4_hybrid_attn_impl: true` to run the sliding-window layers under FA2 and the global (head_dim=512) layers under `sdpa` (requires `attn_implementation: flash_attention_2` and a flash-attn build for your GPU arch).
 - **LoRA kernels**: Not supported for models with KV-sharing layers.
 - **lora_target_linear**: Incompatible for multimodal models; use `lora_target_modules` with a regex to restrict LoRA to the text backbone.
 
 ### TIPS
 
 - **Gradient spikes**: Gemma 4's text attention uses `scaling=1.0` with QK-RMSNorm, leaving the softmax structurally near-saturated. LoRA runs hit intermittent pre-clip gradient norms 100-1000× their neighbours with no matching loss spike ([transformers#45676](https://github.com/huggingface/transformers/issues/45676)). The 31B configs compensate with `learning_rate: 5e-5` and `max_grad_norm: 0.1`; raise either at your own risk.
+- `gemma4_hybrid_attn_impl: true` trains ~2× faster than `flex_attention` on 31B (~25.2 GiB reserved, packing on) and avoids the flex `head_dim=512` kernel, which can exhaust shared memory on Blackwell.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - You can run full finetuning by removing `adapter: qlora`, `load_in_4bit: true`, and `quantize_moe_experts: true` from the config. This is heavy and has not been tested.
 

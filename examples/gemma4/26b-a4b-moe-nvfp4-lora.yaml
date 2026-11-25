@@ -2,9 +2,10 @@
 # sm120 (RTX PRO 6000), 4k seq, experts-only + attn LoRA r=16. ~2350 tok/s / ~24 GiB on one GPU.
 #
 # The two levers that matter most here:
-#   1. attention: the numbers above used gemma4_hybrid_attn_impl (FA2 sliding + SDPA global, ~2x
-#        over plain sdpa). transformers >= 5.24 refuses flash attention on multimodal Gemma 4, so
-#        this recipe now runs plain sdpa and is slower than quoted.
+#   1. attn_implementation: flash_attention_2 + gemma4_hybrid_attn_impl: true
+#        FA2 (via the `kernels` lib — no flash-attn source build) on the sliding-window layers +
+#        SDPA on the global layers. ~2x over plain sdpa, which otherwise computes full attention
+#        over the packed 4k sequence and dominates runtime.
 #   2. moe_grouped_mode (auto -> nvfp4 for this checkpoint)
 #        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (Marlin on sm120,
 #        DeepGEMM on sm90/sm100) instead of the slower per-expert path.
@@ -69,9 +70,9 @@ tf32: true
 
 activation_checkpointing: true
 
-# transformers >= 5.24 refuses flash attention (and so gemma4_hybrid_attn_impl) on multimodal Gemma 4.
-# flex_attention OOMs sm120 shared memory here.
-attn_implementation: sdpa
+# flex_attention OOMs on sm120 here; the hybrid runs FA2 (sliding) + SDPA (global). Needs attn_implementation=flash_attention_2.
+attn_implementation: flash_attention_2
+gemma4_hybrid_attn_impl: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

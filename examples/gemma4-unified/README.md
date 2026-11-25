@@ -20,7 +20,7 @@ axolotl train examples/gemma4-unified/12b-vision-lora.yaml
 
 ## Limitations
 
-- **Attention**: transformers >= 5.24 refuses flash attention on `Gemma4UnifiedForConditionalGeneration`, so the examples use `sdpa` (or try `flex_attention`). `gemma4_hybrid_attn_impl: true` now only loads for text-only (`model_type: gemma4_unified_text`) checkpoints.
+- **Attention**: FA2 (max head_dim=256) / FA4 (max head_dim=128) cannot serve `global_head_dim=512` on their own. For `sample_packing: true`, use `flex_attention` or `gemma4_hybrid_attn_impl: true` (with `flash_attention` varlen for sliding-window layers + block-diagonal `sdpa` for global layers, packing-safe).
 - **lora_target_linear**: incompatible for multimodal. Use `lora_target_modules` as seen in vision example.
 
 ### TIPS
