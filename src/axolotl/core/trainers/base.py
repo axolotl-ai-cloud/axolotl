@@ -60,6 +60,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
     trainable_tokens_per_sec_per_gpu,
 )
+from axolotl.loaders.utils import host_resident_no_placement_params
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.collators import DataCollatorForSeq2Seq
@@ -1077,6 +1078,24 @@ class AxolotlTrainer(
             AcceleratorState._reset_state(reset_partial_state=True)
 
         super().create_accelerator_and_postprocess()
+        self._skip_placement_of_host_resident_models()
+
+    def _skip_placement_of_host_resident_models(self):
+        """Keep accelerate's ``model.to(device)`` from pulling ``ple_cpu_offload``
+        parameters into VRAM; the loader has already placed everything else."""
+        prepare_model = self.accelerator.prepare_model
+
+        @wraps(prepare_model)
+        def _prepare_model(model, device_placement=None, evaluation_mode=False):
+            if device_placement is None and host_resident_no_placement_params(model):
+                device_placement = False
+            return prepare_model(
+                model,
+                device_placement=device_placement,
+                evaluation_mode=evaluation_mode,
+            )
+
+        self.accelerator.prepare_model = _prepare_model
 
     def additional_accelerator_args(
         self,

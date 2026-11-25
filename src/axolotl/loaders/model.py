@@ -50,8 +50,10 @@ from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
     get_linear_embedding_layers,
     get_module_class_from_name,
+    host_resident_no_placement_params,
     load_model_config,
     materialize_trainable_meta_params,
+    to_device_except,
 )
 from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.telemetry.errors import send_errors
@@ -901,14 +903,13 @@ class ModelLoader:
         ``model.to(self.device)`` at L1864, so an accelerate bump that reorders the two
         silently pulls the table back into VRAM.
         ``tests/loaders/test_ple_offload_accelerate_contract.py`` fails if that happens.
+
+        A CPU-staged NF4 model is not bitsandbytes-quantized as far as accelerate can
+        tell, so it misses that branch; ``AxolotlTrainer`` turns off accelerate's model
+        placement for it instead. The device map here still stops ``Trainer.__init__``
+        moving it.
         """
-        suffixes = getattr(self.model, "_no_placement_params", None) or []
-        targets = [
-            name
-            for name, param in self.model.named_parameters()
-            if any(name.endswith(suffix) for suffix in suffixes)
-            and param.device.type == "cpu"
-        ]
+        targets = list(host_resident_no_placement_params(self.model))
         if not targets:
             LOG.warning(
                 "ple_cpu_offload is set but no `_no_placement_params` of %s are in host "
@@ -1352,9 +1353,15 @@ class ModelLoader:
             )
             self.model._moe_experts_quantized = bool(self.cfg.quantize_moe_experts)
             if not self.cfg.fsdp_config:
-                self.model.to(
+                device = (
                     f"{str(get_device_type())}:{int(os.environ.get('LOCAL_RANK', 0))}"
                 )
+                keep = (
+                    host_resident_no_placement_params(self.model).values()
+                    if self.cfg.ple_cpu_offload
+                    else ()
+                )
+                to_device_except(self.model, device, keep)
             return True
 
         skip_move_to_device = False

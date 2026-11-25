@@ -1878,10 +1878,13 @@ class OptimizationValidationMixin:
             )
             self.qlora_sharded_model_loading = False
             return self
-        if self.nf4_backend != "torchao" and not self.fsdp_config:
+        # each launched rank validates its own config, before normalize_config sets world_size
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        if self.nf4_backend != "torchao" and not self.fsdp_config and world_size > 1:
             LOG.warning(
                 "`qlora_sharded_model_loading: true` has no effect without an "
-                "`fsdp_config`; every rank will load and quantize the full model."
+                "`fsdp_config` when training on more than one process; every rank "
+                "will load and quantize the full model."
             )
             self.qlora_sharded_model_loading = False
             return self
