@@ -2108,6 +2108,27 @@ def test_stale_sharded_flag_without_4bit(backend, expected):
     assert not uses_staged_nf4(validated)
 
 
+@pytest.mark.parametrize(
+    "world_size, expected", [(None, True), ("1", True), ("2", False)]
+)
+def test_sharded_nf4_loading_without_fsdp(monkeypatch, world_size, expected):
+    """One process can stage on CPU without FSDP; more would each stage the full model."""
+    from axolotl.loaders.nf4 import uses_staged_nf4
+    from axolotl.utils.dict import DictDefault
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    if world_size is None:
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+    else:
+        monkeypatch.setenv("WORLD_SIZE", world_size)
+    config = _staged_nf4_config(
+        nf4_backend="bitsandbytes", fsdp_version=_UNSET, fsdp_config=_UNSET
+    )
+    validated = AxolotlInputConfig(**config)
+    assert validated.qlora_sharded_model_loading is expected
+    assert uses_staged_nf4(DictDefault(validated.model_dump())) is expected
+
+
 def _timeout_warnings(monkeypatch, tmp_path, requested, group_timeout):
     import logging
     from datetime import timedelta
@@ -2166,10 +2187,11 @@ def test_init_distributed_state_is_silent_without_a_preexisting_group(
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-def test_sharded_flag_without_fsdp_config(backend, caplog):
-    """Without an FSDP config the bitsandbytes flag is inert; torchao still stages."""
+def test_sharded_flag_without_fsdp_config(backend, caplog, monkeypatch):
+    """Without an FSDP config the bitsandbytes flag is inert across processes; torchao still stages."""
     from axolotl.utils.schemas.config import AxolotlInputConfig
 
+    monkeypatch.setenv("WORLD_SIZE", "2")
     config = _staged_nf4_config(nf4_backend=backend, fsdp_config=_UNSET)
     with caplog.at_level("WARNING", logger="axolotl.utils.schemas.validation"):
         validated = AxolotlInputConfig(**config)

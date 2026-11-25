@@ -2,7 +2,7 @@
 
 import contextlib
 import importlib
-from typing import Callable, Type
+from typing import Callable, Iterable, Type
 
 import torch
 import transformers
@@ -348,6 +348,41 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
     )
 
     return materialized
+
+
+def host_resident_no_placement_params(
+    model: torch.nn.Module,
+) -> dict[str, torch.nn.Parameter]:
+    """The model's ``_no_placement_params`` that currently live in host RAM, by name."""
+    suffixes = getattr(model, "_no_placement_params", None) or []
+    return {
+        name: param
+        for name, param in model.named_parameters()
+        if param.device.type == "cpu"
+        and any(name.endswith(suffix) for suffix in suffixes)
+    }
+
+
+def to_device_except(
+    model: torch.nn.Module,
+    device: torch.device | str,
+    keep: Iterable[torch.nn.Parameter],
+) -> None:
+    """``model.to(device)`` that leaves the ``keep`` parameters where they are."""
+    keep_ids = {id(param) for param in keep}
+    # Module._apply skips None entries, and nulling the slot keeps parameter order intact
+    held: list[tuple[torch.nn.Module, str, torch.nn.Parameter]] = []
+    try:
+        for module in model.modules():
+            for attr, param in module._parameters.items():
+                if param is not None and id(param) in keep_ids:
+                    held.append((module, attr, param))
+        for module, attr, _ in held:
+            module._parameters[attr] = None
+        model.to(device)
+    finally:
+        for module, attr, param in held:
+            module._parameters[attr] = param
 
 
 def get_linear_embedding_layers(model_type: str) -> list[str]:

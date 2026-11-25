@@ -65,6 +65,7 @@ lora_target_modules:
 ### TIPS
 
 - `ple_cpu_offload: true` saves 95.4 GiB of VRAM by keeping the n-gram table in host RAM for some minor throughput tradeoff.
+- On a single 141 GB GPU (H200), add `qlora_sharded_model_loading: true` to quantize on the CPU-staged loader; the default loader runs out of memory there.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 
