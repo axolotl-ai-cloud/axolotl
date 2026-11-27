@@ -292,6 +292,7 @@
       "audited_tests": [
         "tests/e2e/multigpu/solo/test_ep_checkpoint_resume_state.py",
         "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",
+        "tests/e2e/multigpu/solo/test_ep_optmoe_nvfp4_lora.py",
         "tests/e2e/multigpu/solo/test_flex.py",
         "tests/e2e/multigpu/solo/test_fsdp2_cpu_offload_grad_clip.py",
         "tests/e2e/multigpu/solo/test_gdpo.py",
