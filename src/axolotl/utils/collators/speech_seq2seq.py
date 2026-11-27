@@ -47,8 +47,11 @@ def load_audio(audio: Any, sampling_rate: int) -> np.ndarray:
         array, orig_sr = soundfile.read(audio, dtype="float32", always_2d=True)
         array = array.mean(axis=1)
     if orig_sr != sampling_rate:
-        librosa = _import_audio_lib("librosa")
-        array = librosa.resample(array, orig_sr=orig_sr, target_sr=sampling_rate)
+        soxr = _import_audio_lib("soxr")
+        num_samples = math.ceil(len(array) * sampling_rate / orig_sr)
+        array = soxr.resample(array, orig_sr, sampling_rate, quality="HQ")
+        # soxr rounds the length; pad/trim to the rounded-up length as librosa.resample does
+        array = np.pad(array, (0, max(num_samples - len(array), 0)))[:num_samples]
     return array
 
 
@@ -64,7 +67,7 @@ def audio_num_samples(audio: Any, sampling_rate: int) -> int:
             audio = io.BytesIO(audio)
         info = soundfile.info(audio)
         num_samples, orig_sr = info.frames, info.samplerate
-    # librosa.resample rounds the output length up
+    # load_audio pads resampled audio to the rounded-up length
     return math.ceil(num_samples * sampling_rate / orig_sr)
 
 
