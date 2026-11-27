@@ -124,6 +124,7 @@ GPU_SLOW_PATHS = (
     "tests/e2e/kernels/",
     "tests/utils/lora/test_merge_lora.py",
     "tests/e2e/multigpu/test_ringmaster.py",
+    "tests/e2e/multigpu/test_ep_optmoe.py",
     "tests/e2e/multigpu/solo/test_twotower_expert_parallel.py",
 )
 # slow tests that cicd/cicd_cuda_kernels.sh and cicd/nf4.sh select by path
