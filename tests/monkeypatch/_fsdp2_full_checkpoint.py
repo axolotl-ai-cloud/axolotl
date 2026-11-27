@@ -257,12 +257,12 @@ def check_peft_trainer_save_route(mesh, root):
     )
     for unwrap in (True, False):
         full = accelerator.get_state_dict(model, unwrap=unwrap)
+        # PEFT gathers DTensor entries collectively, so every rank must call it
+        selected = set(get_peft_model_state_dict(model))
         if dist.get_rank() == 0:
             # the frozen base never reaches rank 0; PEFT selects the adapter from these keys
             assert set(full) == {k for k in model.state_dict() if "lora_" in k}
-            assert set(get_peft_model_state_dict(model, state_dict=full)) == set(
-                get_peft_model_state_dict(model)
-            )
+            assert set(get_peft_model_state_dict(model, state_dict=full)) == selected
     from transformers import Trainer
 
     from axolotl.core.trainers.mixins.distributed_parallel import (
