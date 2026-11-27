@@ -1998,7 +1998,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--asr.punctuation/--no-asr.punctuation",),
         "asr__punctuation",
         None,
-        "Whether the decoder prompt requests punctuated, cased output.",
+        "Whether the decoder prompt requests punctuated, cased output. Ignored when the processor has a chat template.",
     ),
     (
         ("--reward-model/--no-reward-model",),

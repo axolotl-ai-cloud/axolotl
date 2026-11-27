@@ -97,10 +97,14 @@ class SpeechSeq2SeqCollator:
     _warned: set[str] = field(default_factory=set, init=False)
 
     def __post_init__(self):
-        if not hasattr(self.processor, "get_decoder_prompt_ids"):
+        if not (
+            getattr(self.processor, "chat_template", None)
+            or hasattr(self.processor, "get_decoder_prompt_ids")
+        ):
             raise ValueError(
-                f"{type(self.processor).__name__} has no get_decoder_prompt_ids; "
-                "the speech seq2seq collator cannot build the decoder prompt."
+                f"{type(self.processor).__name__} has neither a chat template nor "
+                "get_decoder_prompt_ids; the speech seq2seq collator cannot build "
+                "the decoder prompt."
             )
         if self.tokenizer.eos_token_id is None or self.tokenizer.pad_token_id is None:
             raise ValueError("The tokenizer must define eos and pad tokens.")
@@ -134,12 +138,27 @@ class SpeechSeq2SeqCollator:
                 "`asr.language_column`."
             )
         if language not in self._prompts:
-            self._prompts[language] = list(
+            self._prompts[language] = self._render_prompt(language)
+        return self._prompts[language]
+
+    def _render_prompt(self, language: str) -> list[int]:
+        if not getattr(self.processor, "chat_template", None):
+            return list(
                 self.processor.get_decoder_prompt_ids(
                     language=language, punctuation=self.punctuation
                 )
             )
-        return self._prompts[language]
+        # the template renders the whole decoder prompt, decoder start token included
+        prompt = self.processor.apply_chat_template(
+            [{"role": "user", "content": [{"type": "audio"}]}],
+            add_generation_prompt=True,
+            tokenize=False,
+            language=language,
+        )
+        prompt_ids = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        if not prompt_ids:
+            raise ValueError("The processor's chat template rendered an empty prompt.")
+        return prompt_ids
 
     def _build_sequence(self, row: dict) -> tuple[list[int], list[int]]:
         prompt = self._prompt_ids(row)

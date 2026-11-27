@@ -1,5 +1,7 @@
 """Tests for the speech seq2seq (ASR) collator."""
 
+import copy
+import dataclasses
 import io
 from unittest.mock import patch
 
@@ -132,6 +134,19 @@ def test_missing_language_raises(make_collator):
     collator = make_collator(asr={"language": None})
     with pytest.raises(ValueError, match="No language"):
         collator([_row("hello")])
+
+
+def test_chat_template_prompt(make_collator, tokenizer):
+    collator = make_collator()
+    processor = copy.copy(collator.processor)
+    processor.chat_template = "{{- 'transcribe ' ~ language ~ ':' -}}"
+    collator = dataclasses.replace(collator, processor=processor)
+    prompt = tokenizer("transcribe en:", add_special_tokens=False)["input_ids"]
+    batch = collator([_row("hello world")])
+    assert batch["decoder_input_ids"][0, : len(prompt)].tolist() == prompt
+    labels = batch["labels"][0].tolist()
+    assert labels[: len(prompt) - 1] == [IGNORE_INDEX] * (len(prompt) - 1)
+    assert labels[len(prompt) - 1] != IGNORE_INDEX
 
 
 def test_truncation_drops_eos(make_collator, tokenizer):

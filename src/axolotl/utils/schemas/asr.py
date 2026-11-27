@@ -31,6 +31,6 @@ class AsrConfig(BaseModel):
     punctuation: bool = Field(
         default=True,
         json_schema_extra={
-            "description": "Whether the decoder prompt requests punctuated, cased output."
+            "description": "Whether the decoder prompt requests punctuated, cased output. Ignored when the processor has a chat template."
         },
     )
