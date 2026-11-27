@@ -20,7 +20,7 @@ axolotl train examples/gemma4-unified/12b-vision-lora.yaml
 
 ## Limitations
 
-- **Attention**: FA2 (max head_dim=256) / FA4 (max head_dim=128) cannot serve `global_head_dim=512` on their own. For `sample_packing: true`, use `flex_attention` or `gemma4_hybrid_attn_impl: true` (with `flash_attention` varlen for sliding-window layers + block-diagonal `sdpa` for global layers, packing-safe).
+- **Attention**: FA2 (max head_dim=256) / FA4 (max head_dim=128) cannot serve `global_head_dim=512` on their own. For `sample_packing: true`, use `flex_attention` or `gemma4_hybrid_attn_impl: true` (with `flash_attention` varlen for sliding-window layers + block-diagonal `sdpa` for global layers, packing-safe). The hybrid is text-only; leave it off for vision training.
 - **lora_target_linear**: incompatible for multimodal. Use `lora_target_modules` as seen in vision example.
 
 ### TIPS

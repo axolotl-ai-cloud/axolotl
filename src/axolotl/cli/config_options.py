@@ -2842,7 +2842,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--gemma4-hybrid-attn-impl/--no-gemma4-hybrid-attn-impl",),
         None,
         None,
-        "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers and sdpa for global (full_attention) layers. Global layers have head_dim=512 which exceeds flash attention's supported size.",
+        "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers and sdpa for global (full_attention) layers. Global layers have head_dim=512 which exceeds flash attention's supported size. Text-only: flash attention ignores the bidirectional image-token mask, so leave it off for vision training.",
     ),
     (
         ("--large-head-attention",),

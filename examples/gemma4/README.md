@@ -30,7 +30,7 @@ The 26B-A4B config uses ScatterMoE kernels via the transformers `ExpertsInterfac
 
 ## Limitations
 
-- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot serve Gemma 4's `global_head_dim=512` on their own. Use `flex_attention`, or `gemma4_hybrid_attn_impl: true` to run the sliding-window layers under FA2 and the global (head_dim=512) layers under `sdpa` (requires `attn_implementation: flash_attention_2` and a flash-attn build for your GPU arch).
+- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot serve Gemma 4's `global_head_dim=512` on their own. Use `flex_attention`, or `gemma4_hybrid_attn_impl: true` to run the sliding-window layers under FA2 and the global (head_dim=512) layers under `sdpa` (requires `attn_implementation: flash_attention_2` and a flash-attn build for your GPU arch). The hybrid is text-only: flash attention ignores the bidirectional image-token mask, so leave it off for vision training.
 - **LoRA kernels**: Not supported for models with KV-sharing layers.
 - **lora_target_linear**: Incompatible for multimodal models; use `lora_target_modules` with a regex to restrict LoRA to the text backbone.
 
