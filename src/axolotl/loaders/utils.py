@@ -360,4 +360,6 @@ def get_linear_embedding_layers(model_type: str) -> list[str]:
         return ["embeddings", "lm_head"]
     if model_type == "bailing_hybrid":
         return ["word_embeddings", "lm_head"]
+    if model_type == "cohere_asr":
+        return ["embed_tokens", "proj_out"]
     return ["embed_tokens", "lm_head"]

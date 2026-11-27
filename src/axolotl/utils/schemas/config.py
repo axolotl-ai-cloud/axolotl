@@ -21,6 +21,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.activation_checkpointing import (
     ActivationCheckpointingConfig,
 )
+from axolotl.utils.schemas.asr import AsrConfig
 from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
 from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
@@ -299,6 +300,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Configuration for `axolotl export` (GGUF conversion)"
+        },
+    )
+    asr: AsrConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Speech recognition (speech seq2seq) dataset columns and decoder prompt options"
         },
     )
     reward_model: bool | None = Field(

@@ -1,7 +1,7 @@
 """`get_linear_embedding_layers` against the model classes used for training."""
 
 import pytest
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSpeechSeq2Seq
 from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES
 
 from axolotl.loaders.utils import get_linear_embedding_layers
@@ -32,6 +32,21 @@ MODEL_KWARGS = {
         "pad_token_id": 0,
         "eos_token_id": 1,
         "num_nextn_predict_layers": 0,
+        "hidden_size": 32,
+        "intermediate_size": 64,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "vocab_size": 64,
+    },
+    "cohere_asr": {
+        "encoder_config": {
+            "hidden_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "intermediate_size": 64,
+            "subsampling_conv_channels": 8,
+            "num_mel_bins": 16,
+        },
         "hidden_size": 32,
         "intermediate_size": 64,
         "num_hidden_layers": 1,
@@ -70,6 +85,8 @@ def fixture_model(model_type):
     if model_type not in CONFIG_MAPPING_NAMES:
         pytest.skip(f"{model_type} is not available in this transformers")
     config = AutoConfig.for_model(model_type, **MODEL_KWARGS[model_type])
+    if config.is_encoder_decoder:
+        return AutoModelForSpeechSeq2Seq.from_config(config)
     return AutoModelForCausalLM.from_config(config)
 
 

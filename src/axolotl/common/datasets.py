@@ -77,17 +77,21 @@ def load_datasets(
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
         text_only = cli_args.debug_text_only if cli_args else False
-        try:
-            train_samples = sample_dataset(train_dataset, num_examples)
-            check_dataset_labels(
-                train_samples,
-                tokenizer,
-                num_examples=num_examples,
-                text_only=text_only,
-            )
-        except AttributeError:
-            # can't sample iterable datasets
-            pass
+        column_names = getattr(train_dataset, "column_names", None)
+        if column_names and "input_ids" not in column_names:
+            LOG.info("skipping check_dataset_labels: dataset is not tokenized")
+        else:
+            try:
+                train_samples = sample_dataset(train_dataset, num_examples)
+                check_dataset_labels(
+                    train_samples,
+                    tokenizer,
+                    num_examples=num_examples,
+                    text_only=text_only,
+                )
+            except AttributeError:
+                # can't sample iterable datasets
+                pass
 
         LOG.info("printing prompters...")
         for prompter in prompters:

@@ -136,11 +136,15 @@ def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
         return TaskType.SEQ_CLS
     if "TokenClassification" in model_cls:
         return TaskType.TOKEN_CLS
-    if getattr(getattr(model, "config", None), "model_type", None) in {
+    config = getattr(model, "config", None)
+    if getattr(config, "model_type", None) in {
         "diffusion_gemma",
         "Dream",
         "nemotron_labs_diffusion",
     }:
+        return None
+    # PEFT's task wrappers inject input_ids, which collides with decoder_input_ids
+    if getattr(config, "is_encoder_decoder", False):
         return None
     return TaskType.CAUSAL_LM
 

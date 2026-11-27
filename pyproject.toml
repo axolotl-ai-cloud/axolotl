@@ -149,6 +149,11 @@ opentelemetry = [
     "prometheus-client",
 ]
 kernels-curated = ["kernels[curated]"]
+audio = [
+    "librosa>=0.11",
+    "soundfile>=0.13",
+    "soxr>=1.0",
+]
 
 [dependency-groups]
 dev = [
