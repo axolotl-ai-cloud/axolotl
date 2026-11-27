@@ -721,6 +721,41 @@ def _ep_topology_worker(rank, world_size, ep_size, dp_shard_size, port, q):
         ExpertParallelPlugin._device_mesh = None
 
 
+def _ep_resolve_twice_worker(rank, world_size, port, q):
+    """Resolve the EP x dp_shard group twice before any Accelerator exists, as the optmoe
+    backend does (expert sharding, then the runtime), and report whether accelerate's shared
+    state was left untouched."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(
+        backend="gloo",
+        rank=rank,
+        world_size=world_size,
+        timeout=timedelta(seconds=120),
+    )
+    try:
+        from accelerate.state import AcceleratorState
+
+        cfg = SimpleNamespace(
+            expert_parallel_size=2,
+            dp_shard_size=2,
+            tensor_parallel_size=1,
+            context_parallel_size=1,
+            fsdp_config={"fsdp_version": 2},
+        )
+        try:
+            first = ExpertParallelPlugin._resolve_ep_group(cfg)
+            second = ExpertParallelPlugin._resolve_ep_group(cfg)
+            q.put((rank, first is second, dict(AcceleratorState._shared_state), None))
+        except Exception as e:  # noqa: BLE001
+            q.put((rank, False, {}, f"{type(e).__name__}: {e}"))
+    finally:
+        dist.destroy_process_group()
+        ExpertParallelPlugin._device_mesh = None
+
+
 def _ep_topology_worker_expects_error(
     rank, world_size, ep_size, dp_shard_size, port, q
 ):
@@ -914,6 +949,26 @@ class TestMeshTopology:
         assert dp_groups_by_rank[1] == (1, 3), dp_groups_by_rank
         assert dp_groups_by_rank[2] == (0, 2), dp_groups_by_rank
         assert dp_groups_by_rank[3] == (1, 3), dp_groups_by_rank
+
+    def test_world4_ep2_dp2_resolves_twice_without_accelerator(self):
+        """The optmoe backend resolves the group for expert sharding and again for its runtime,
+        both before the trainer's Accelerator: the second call reuses the first mesh and neither
+        leaves half-initialized AcceleratorState behind (a later Accelerator() would then lack
+        mixed_precision)."""
+        ctx = mp.get_context("spawn")
+        q = ctx.Queue()
+        port = _find_free_port()
+        procs = [
+            ctx.Process(target=_ep_resolve_twice_worker, args=(r, 4, port, q))
+            for r in range(4)
+        ]
+        for p in procs:
+            p.start()
+        results = _collect_worker_results(procs, q, 4)
+        for rank, same, shared, err in results:
+            assert err is None, (rank, err)
+            assert same, rank
+            assert shared == {}, (rank, sorted(shared))
 
     def test_world4_ep4_dp1_uses_world(self):
         """ep_size == world_size short-circuits to dist.group.WORLD."""

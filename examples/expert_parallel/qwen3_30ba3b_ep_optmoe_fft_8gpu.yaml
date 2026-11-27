@@ -1,0 +1,48 @@
+# Qwen3-30B-A3B full fine-tune on one node of eight H100, H200 or B200 GPUs with the fused
+# optmoe expert-parallel backend (expert parallel 8, no FSDP shard axis).
+#
+#   axolotl train examples/expert_parallel/qwen3_30ba3b_ep_optmoe_fft_8gpu.yaml
+#
+# Four GPUs: expert_parallel_size: 4. Sixteen GPUs on two nodes: expert_parallel_size: 8 and
+# dp_shard_size: 2 (the EP group must stay inside one NVLink node).
+# Requires the optmoe package and its kernel extension: pip install optmoe, then python -m optmoe.install_kernels.
+base_model: Qwen/Qwen3-30B-A3B
+
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+expert_parallel_size: 8
+expert_parallel_backend: optmoe
+expert_parallel_optmoe_precision: auto   # bf16 on Hopper, mxfp8 on Blackwell
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path:
+output_dir: ./outputs/qwen3-30b-a3b-optmoe
+
+sequence_len: 4096
+sample_packing: true
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 1
+
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 5e-6
+warmup_ratio: 0.05
+bf16: true
+tf32: false
+
+activation_checkpointing: true   # non-reentrant; reentrant checkpointing is rejected with EP
+flash_attention: true
+logging_steps: 1
+saves_per_epoch: 1
+save_only_model: true
+seed: 42
+
+fsdp_version: 2
+fsdp_config:
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT   # required with EP; SHARDED_STATE_DICT would keep one EP group's experts
+  reshard_after_forward: true

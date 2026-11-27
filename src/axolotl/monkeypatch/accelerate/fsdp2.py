@@ -220,10 +220,22 @@ def fsdp2_load_full_state_dict(
 
     # keep_vars: tell params from buffers by type, since named_parameters() keys keep
     # the `_checkpoint_wrapped_module.` segment that state_dict() strips.
+    from axolotl.integrations.expert_parallel.nvfp4_lora import is_nvfp4_tensor
+
     meta_sharded_sd = model.state_dict(keep_vars=True)
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
+        if (
+            not sharded_meta_param.is_meta
+            and not hasattr(sharded_meta_param, "device_mesh")
+            and not sharded_meta_param.requires_grad
+            and is_nvfp4_tensor(sharded_meta_param)
+        ):
+            # kept real through the meta move (nvfp4_lora's rank-local frozen experts)
+            sharded_sd[param_name] = sharded_meta_param
+            full_sd.pop(param_name, None)
+            continue
         nvfp4_cls = _nvfp4_local_tensor_cls(sharded_meta_param)
 
         # EP-sharded experts as DTensors (pure EP per-rank mesh, or an EP×dp_shard subgroup): every
@@ -775,8 +787,17 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             )
 
             ep_local_state = expert_parallel_local_state(model)
+        # The frozen NVFP4 experts of nvfp4_lora are this rank's EP slice outside FSDP: no
+        # broadcast refills them, so they skip the meta round trip.
+        from axolotl.integrations.expert_parallel.nvfp4_lora import (
+            detach_frozen_experts,
+            reattach_frozen_experts,
+        )
+
+        kept_experts = detach_frozen_experts(model)
         # We move the model to meta device, as then sharding happens on meta device
         model = model.to(torch.device("meta"))
+        reattach_frozen_experts(kept_experts)
         # We need to re-tie the weights, not exactly sure why, but if we don't do this, reference to `lm_head/embed_tokens` stay hanging -> more VRAM usage
         # We assume `transformers` models have a `tie_weights` method if they support it
         if hasattr(model, "tie_weights"):

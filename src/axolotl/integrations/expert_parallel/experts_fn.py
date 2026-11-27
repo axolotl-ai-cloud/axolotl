@@ -11,14 +11,20 @@
 Dispatches tokens to the ranks owning their experts (DeepEP or torch all-to-all), runs
 whichever experts implementation the user configured on the received rows, and combines
 the results back. Slots owned by another rank reach the local implementation as expert id
-``num_experts`` with weight 0.
+``num_experts`` with weight 0. The ``optmoe`` backend has two modes: ``fused`` replaces
+all three stages with one persistent kernel per direction, so the local implementation
+does not apply; ``dispatch`` moves the rows over NVLink symmetric memory and runs the
+local implementation like the other backends.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+from torch.distributed.tensor import DTensor
 
 from . import torch_dispatch
 from .buffer import barrier_ep, get_buffer, get_combine_config, get_dispatch_config
@@ -98,9 +104,10 @@ def _get_valid_token_mask() -> torch.Tensor | None:
 
 
 EXPERT_PARALLEL = "expert_parallel"
+OPTMOE = "optmoe"
 
-# Dispatch backend (``deep_ep`` | ``torch``) and the wrapped local experts implementation,
-# both set by the EP plugin before the model is built.
+# Dispatch backend (``deep_ep`` | ``torch`` | ``optmoe``) and the wrapped local experts
+# implementation, both set by the EP plugin before the model is built.
 _BACKEND: str | None = None
 _LOCAL_IMPLEMENTATION: str = "grouped_mm"
 
@@ -127,6 +134,45 @@ def set_local_implementation(name: str) -> None:
 
 def get_local_implementation() -> str:
     return _LOCAL_IMPLEMENTATION
+
+
+# The process-wide ``optmoe`` runtime (``optmoe.OptMoERuntime`` in fused mode,
+# ``optmoe.OptMoEDispatchRuntime`` in dispatch mode, or a test double), built by the EP
+# plugin in ``post_model_load`` and shared by every MoE layer.
+_OPTMOE_RUNTIME = None
+
+OPTMOE_MODES = ("fused", "dispatch")
+# Resolved ``expert_parallel_optmoe_mode`` (``auto`` is settled by the plugin before the
+# runtime is built).
+_OPTMOE_MODE: str = "fused"
+
+
+def set_optmoe_runtime(runtime) -> None:
+    global _OPTMOE_RUNTIME
+    _OPTMOE_RUNTIME = runtime
+
+
+def get_optmoe_runtime():
+    if _OPTMOE_RUNTIME is None:
+        raise RuntimeError(
+            "expert_parallel_backend=optmoe: no runtime built; the "
+            "ExpertParallelPlugin builds it in post_model_load (or call "
+            "experts_fn.set_optmoe_runtime)."
+        )
+    return _OPTMOE_RUNTIME
+
+
+def set_optmoe_mode(mode: str) -> None:
+    global _OPTMOE_MODE
+    if mode not in OPTMOE_MODES:
+        raise ValueError(
+            f"unknown optmoe mode {mode!r}; expected one of {OPTMOE_MODES}"
+        )
+    _OPTMOE_MODE = mode
+
+
+def get_optmoe_mode() -> str:
+    return _OPTMOE_MODE
 
 
 def _eager_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
@@ -216,6 +262,18 @@ def _pad_expert_rows(recv_x, idx, weights, num_local_experts):
         torch.cat((idx, pad_idx)),
         torch.cat((weights, pad_w)),
     )
+
+
+def _local_row_bound(local, num_local_experts, training):
+    """Receive rows for a bounded optmoe dispatch with high-water count ``mark``: SonicMoE
+    pads the received rows plus ``_pad_expert_rows``' to its own bucket anyway, so the
+    bound fills that bucket (fewer re-runs, same kernel shapes as the exact count)."""
+    if (local or _LOCAL_IMPLEMENTATION) != "sonicmoe":
+        return None
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import ep_padded_rows
+
+    e = num_local_experts
+    return lambda mark: ep_padded_rows(mark + e, training) - e
 
 
 def _run_local(experts, local, recv_x, recv_topk_idx, recv_topk_weights):
@@ -366,9 +424,95 @@ class _TorchBackend:
         return torch_dispatch.combine(local_out, handle)
 
 
-_BACKENDS: dict[str, type[_DeepEPBackend] | type[_TorchBackend]] = {
+def _local_expert_weights(experts):
+    """HF-layout ``gate_up_proj [E_local, 2I, H]`` / ``down_proj [E_local, H, I]`` as local
+    tensors; ``to_local`` is autograd-aware, so gradients flow back into the FSDP2 shards."""
+    weights = []
+    for name in ("gate_up_proj", "down_proj"):
+        weight = getattr(experts, name)
+        if isinstance(weight, DTensor):
+            weight = weight.to_local()
+        weights.append(weight)
+    return weights
+
+
+class _OptMoEFusedBackend:
+    cast_bf16 = True
+    fused = True  # dispatch, local experts and combine run inside the runtime's kernels
+
+    @staticmethod
+    def forward(
+        experts,
+        hidden_states,
+        topk_idx,
+        topk_w,
+        *,
+        num_experts_global,
+        num_local_experts,
+    ):
+        runtime = get_optmoe_runtime()
+        if getattr(runtime, "precision", None) == "nvfp4_lora":
+            from .nvfp4_lora import forward as nvfp4_lora_forward
+
+            return nvfp4_lora_forward(runtime, experts, hidden_states, topk_idx, topk_w)
+        w1, w2 = _local_expert_weights(experts)
+        from .fused_lora import PRECISIONS as FUSED_LORA_PRECISIONS
+
+        if getattr(runtime, "precision", None) in FUSED_LORA_PRECISIONS:
+            from .fused_lora import forward as fused_lora_forward
+
+            return fused_lora_forward(
+                runtime, experts, hidden_states, topk_idx, topk_w, w1, w2
+            )
+        return runtime.forward(hidden_states, topk_idx, topk_w, w1, w2)
+
+
+class _OptMoEDispatchBackend:
+    """optmoe's peer-memory dispatch/combine around the configured local kernel.
+
+    The runtime returns the DeepEP row layout over a fixed ``world * capacity`` rows (zero
+    rows with all ``-1`` ids where nothing routes here; only the routed rows when the
+    runtime is compact), so ``_run_local`` and the local kernels run unchanged; combine
+    sums the partial rows onto the source tokens without touching the routing weights,
+    exactly as the torch backend does. The handle is the runtime's.
+    """
+
+    cast_bf16 = True
+    fused = False
+
+    @staticmethod
+    def dispatch(
+        hidden_states, topk_idx, topk_w, *, num_experts_global, num_local_experts
+    ):
+        return get_optmoe_runtime().dispatch(
+            hidden_states, topk_idx, topk_w, num_local_experts
+        )
+
+    @staticmethod
+    def combine(local_out, handle):
+        return get_optmoe_runtime().combine(local_out, handle)
+
+
+class _OptMoEBackend:
+    """``optmoe`` resolved to the configured mode at call time."""
+
+    cast_bf16 = True
+
+    @staticmethod
+    def resolve(mode: str | None = None):
+        mode = mode or _OPTMOE_MODE
+        if mode not in OPTMOE_MODES:
+            raise ValueError(
+                f"unknown optmoe mode {mode!r}; expected one of {OPTMOE_MODES}"
+            )
+        return _OptMoEFusedBackend if mode == "fused" else _OptMoEDispatchBackend
+
+
+# duck-typed: ``fused`` backends expose ``forward``, the others ``dispatch``/``combine``
+_BACKENDS: dict[str, Any] = {
     "deep_ep": _DeepEPBackend,
     "torch": _TorchBackend,
+    OPTMOE: _OptMoEBackend,
 }
 
 
@@ -380,6 +524,7 @@ def _ep_forward(
     *,
     local: str | None = None,
     backend: str | None = None,
+    optmoe_mode: str | None = None,
 ):
     """Dispatch -> local experts implementation -> combine.
 
@@ -388,7 +533,7 @@ def _ep_forward(
     local expert ids in `[0, E_local)` with `-1` for slots routed to remote experts;
     `_run_local` rewrites those to `E_local` / weight 0 before the local implementation
     (``local``, default: the configured one) sees them. ``backend`` defaults to the one
-    the plugin set.
+    the plugin set, ``optmoe_mode`` to the resolved mode.
     """
     backend = backend or _BACKEND
     if backend is None:
@@ -397,7 +542,8 @@ def _ep_forward(
             "in pre_model_load (or call experts_fn.set_backend)."
         )
     ep_backend = _BACKENDS[backend]
-    local_fn = resolve_local_implementation(local)
+    if ep_backend is _OptMoEBackend:
+        ep_backend = _OptMoEBackend.resolve(optmoe_mode)
     _maybe_install_decorator_attrs(self)
     self._is_expert_parallel = True
     original_dtype = None
@@ -438,6 +584,20 @@ def _ep_forward(
             topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY
         )
 
+    if getattr(ep_backend, "fused", False):
+        combined = ep_backend.forward(
+            self,
+            hidden_states,
+            topk_idx_i64,
+            topk_w_f32,
+            num_experts_global=E_global,
+            num_local_experts=E_local,
+        )
+        if original_dtype is not None:
+            combined = combined.to(original_dtype)
+        return combined
+
+    local_fn = resolve_local_implementation(local)
     group = (
         _TorchBackend.group(E_global, E_local)
         if backend == "torch" and _DISPATCH_CHUNKS > 1
@@ -452,6 +612,18 @@ def _ep_forward(
             num_local_experts=E_local,
             group=group,
             chunks=_DISPATCH_CHUNKS,
+        )
+    elif ep_backend is _OptMoEDispatchBackend and getattr(
+        get_optmoe_runtime(), "bounded", False
+    ):
+        combined = get_optmoe_runtime().forward_bounded(
+            hidden_states,
+            topk_idx_i64,
+            topk_w_f32,
+            E_local,
+            lambda rx, ri, rw: _run_local(self, local_fn, rx, ri, rw),
+            id(self),
+            _local_row_bound(local, E_local, self.training),
         )
     else:
         recv_x, recv_topk_idx, recv_topk_weights, handle = ep_backend.dispatch(

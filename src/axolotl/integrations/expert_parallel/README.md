@@ -1,6 +1,6 @@
 # Expert Parallelism Integration
 
-Replaces the MoE dispatch/combine path with token-parallel expert dispatch, on one of two backends.
+Replaces the MoE dispatch/combine path with token-parallel expert dispatch, on one of three backends.
 
 ## Backends
 
@@ -8,9 +8,10 @@ Replaces the MoE dispatch/combine path with token-parallel expert dispatch, on o
 |----------------------------|----------|-------|
 | `deep_ep`                  | DeepEP's fused NVSHMEM kernels | NVLink (intranode) or RDMA (internode); the `deep_ep` build — see [Installation](#installation) |
 | `torch`                     | Plain `all_to_all_single` over the EP process group | Any NCCL or gloo fabric — no extra build, works over PCIe |
-| `auto` (default)            | `deep_ep` if importable, else `torch` | — |
+| `optmoe`               | The `optmoe` package over NVLink symmetric memory: `fused` mode runs dispatch, SwiGLU experts and combine in one persistent kernel per direction; `dispatch` mode runs OPTMoE's peer dispatch/combine around the configured local-experts kernel | One NVLink node and the `optmoe` package; `fused` needs Hopper or Blackwell, `dispatch` SM80+ — see [`optmoe` backend](#optmoe-backend) |
+| `auto` (default)            | `deep_ep` if importable, else `torch` (never `optmoe`) | — |
 
-Both backends compose with the same local-experts kernel (ScatterMoE, SonicMoE, grouped_mm, eager), the same FSDP mesh, and the same sharding/save-load path — only the token dispatch/combine collective differs. Set explicitly to pin one:
+`deep_ep`, `torch` and `optmoe` in `dispatch` mode compose with the same local-experts kernel (ScatterMoE, SonicMoE, grouped_mm, eager), the same FSDP mesh, and the same sharding/save-load path — only the token dispatch/combine collective differs. Set explicitly to pin one:
 
 ```yaml
 expert_parallel_backend: torch  # or deep_ep; omit for auto
@@ -33,6 +34,86 @@ The dispatched/combined rows are recomputed by default. `expert_parallel_save_di
 `expert_parallel_dispatch_chunks: N` (default `1`, `torch` backend only) splits each MoE layer's tokens into `N` chunks and pipelines them: chunk `i+1`'s dispatch `all_to_all` is in flight while chunk `i`'s expert GEMMs run, and chunk `i`'s combine is consumed only after chunk `i+1`'s GEMMs are enqueued, so the collectives can overlap compute. All chunks' split counts come from one count exchange and one device-to-host copy per layer. Only the forward overlaps: autograd runs each chunk's backward chain back to back. An explicit `expert_parallel_backend: deep_ep` with `N > 1` is rejected at config validation.
 
 Overlap is not a speedup guarantee: each chunk adds its own collectives and kernel launches, and that per-chunk overhead can exceed what the overlap hides. On 2x PCIe GPUs (16k tokens, hidden 4096), `N: 2` was 12-18% faster when expert compute dominated and ~5% slower when communication-bound; `N: 4` helped only in the most compute-heavy case, and `N: 8` was never faster and up to 3x slower. Benchmark your model's forward before raising `N`, and start from `2`.
+
+### `optmoe` backend
+
+`optmoe` (the [OPTMoE](https://github.com/axolotl-ai-cloud/optmoe) package) moves tokens over NVLink symmetric memory in one of two modes, chosen by `expert_parallel_optmoe_mode`:
+
+| `expert_parallel_optmoe_mode` | Dispatch / combine | Local experts kernel |
+|--------------------------------|--------------------|----------------------|
+| `fused`   | one persistent kernel per direction fusing dispatch, SwiGLU experts and combine (full fine-tune, or a LoRA adapter on the experts through the `*_lora` precisions) | not used: `use_sonicmoe`, `use_scattermoe` and `experts_implementation` are ignored (config validation warns) and apply only if the backend falls back to `torch` |
+| `dispatch` | OPTMoE's peer dispatch and combine (`optmoe::peer_dispatch` / `peer_combine`): every rank pulls the rows routed to its experts straight out of the peers' buffers and pushes the expert outputs back into per-token slots | whichever the config names, exactly as under `deep_ep` / `torch`, so DoRA and other adapters the fused LoRA precisions do not cover, quantized experts, biases, non-SiLU gates, clamped SwiGLU and shared experts all work |
+| `auto` (default) | `fused` when the config and model pass the fused checks below, otherwise `dispatch` when the hardware supports it, otherwise the `expert_parallel_fallback_on_unsupported` behaviour | |
+
+```yaml
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+expert_parallel_size: 8
+expert_parallel_backend: optmoe
+expert_parallel_optmoe_mode: auto       # fused | dispatch
+expert_parallel_optmoe_precision: auto  # fused mode: bf16 | mxfp8 | fp8 | fp8_bwd (| *_lora)
+expert_parallel_optmoe_workspace_bound: auto  # fused mode, SM100: auto | max
+expert_parallel_optmoe_stored_context: auto  # fused mode, SM100: auto | recompute | always | off
+expert_parallel_optmoe_nvfp4_merged_cache: layer  # nvfp4_lora: layer | all
+expert_parallel_optmoe_nvfp4_headroom_log2: 0  # nvfp4_lora: 0 to 4, merged-weight headroom as a power of two
+expert_parallel_optmoe_fused_lora: true  # LoRA on BF16 experts in the fused mode; false: dispatch
+expert_parallel_optmoe_lora_merged_cache: layer  # bf16_lora / mxfp8_lora / fp8_lora: layer | all
+fsdp_version: 2
+fsdp_config:
+  state_dict_type: FULL_STATE_DICT
+```
+
+Install the package with `pip install axolotl[optmoe]` (or `pip install optmoe`), then its compiled kernel extension with `python -m optmoe.install_kernels`, which fetches the wheel for this Python, torch and CUDA version or builds it from source. The `dispatch` mode needs only the package itself (Triton kernels and torch symmetric memory, no kernel extension).
+
+#### Fused mode
+
+| Precision | SM90 (Hopper) | SM100 (Blackwell) |
+|-----------|---------------|-------------------|
+| `auto`    | `bf16`        | `mxfp8`           |
+| `bf16`    | yes           | yes               |
+| `mxfp8`   | no            | yes               |
+| `fp8` (blockwise E4M3 forward and backward) | yes | no |
+| `fp8_bwd` (BF16 forward, blockwise FP8 backward) | not implemented yet | no |
+| `nvfp4_lora` (frozen packed NVFP4 experts, PEFT expert LoRA) | no | yes (`auto` picks it with `adapter: lora` on a modelopt NVFP4 base) |
+| `bf16_lora` (frozen BF16 experts, PEFT expert LoRA, `bf16` kernels) | yes (`bf16` with an adapter) | yes (`bf16` with an adapter) |
+| `mxfp8_lora` (the same on the `mxfp8` kernels) | no | yes (`auto` / `mxfp8` with an adapter) |
+| `fp8_lora` (the same on the blockwise `fp8` kernels) | yes (`fp8` with an adapter) | no |
+
+Master weights keep their own dtype (BF16 or FP32) and weight gradients come back in it. SM120 (RTX PRO 6000, RTX 50-series) and older GPUs are unsupported and fall back.
+
+`nvfp4_lora` trains an adapter on packed NVFP4 experts. The kernels plugin loads the modelopt NVFP4 experts and its `ParamWrapper` fastpath hands the `lora_target_parameters` adapter to the experts module, so the config needs `use_sonicmoe: true`, `nvfp4_merge_aware: false` (merge-aware training stays the SonicMoE path), `lora_dropout: 0` and both `experts.gate_up_proj` and `experts.down_proj` in `lora_target_parameters` ([examples/expert_parallel/qwen3_30ba3b_nvfp4_lora_optmoe.yaml](../../../../examples/expert_parallel/qwen3_30ba3b_nvfp4_lora_optmoe.yaml)). The packed experts stay frozen plain tensors outside FSDP on every rank (`fully_shard_experts` passes them as `ignored_params`; dp_shard peers hold the same EP slice); a `optmoe.nvfp4_lora.Nvfp4LoraExperts` is built over each layer's bytes in place at train begin (so a `torch_compile` forward creates none; a layer not on the GPU yet is built at its first forward), and a global optimizer post-step hook invalidates the requant cache so the merged weights are rebuilt from the updated adapter (gradient accumulation reuses them; FSDP2-sharded adapters are read unsharded inside the forward and the backward). `expert_parallel_optmoe_nvfp4_merged_cache: layer` (default) requantizes each layer's forms right before its forward and its backward and keeps the last two layers resident; `all` holds every layer's four forms across the step. The transposed backward forms are quantized from the merged tile (`OPTMOE_NVFP4_REQUANT=cuda_fused`), so no transposed copy of the base is stored. The checkpoint's `input_scale` tensors (read once from its safetensors) set the static activation scales. Adapter checkpoints take the usual EP / FSDP2 gather paths; `merge-lora` is the SonicMoE merge-aware path's job.
+
+`bf16_lora`, `mxfp8_lora` and `fp8_lora` train the same PEFT expert adapter on a BF16 base with the full fine-tune kernels of `bf16`, `mxfp8` and `fp8`: an expert LoRA config with `auto`, `bf16`, `mxfp8` or `fp8` resolves to them (`auto` is `mxfp8_lora` on SM100, `bf16_lora` on SM90). The config needs `use_sonicmoe: true` (its ParamWrapper fast path hands the factors over), `lora_dropout: 0`, no DoRA and both expert projections in `lora_target_parameters`; `expert_parallel_optmoe_fused_lora: false` keeps such adapters on the dispatch mode. The frozen base stays in the experts module and is FSDP2-sharded with the layer; `fused_lora.py` keeps one `optmoe.lora.LoraExperts` per layer and the shared `MergedWeightCache`, which a global optimizer post-step hook invalidates, so each layer's merged weights `bf16(W + scaling * B @ A)` are rebuilt after every step from the unsharded base FSDP2 gathered for that forward or backward (`expert_parallel_optmoe_lora_merged_cache: layer` merges per use and keeps the last two layers, `all` merges once per step). The kernels run on the merged weights; the adapter gradients come from rank-r grouped GEMMs on the backward's pools (blockwise FP8: projected from its FP8 dW) and the base gets none. The fused forward is the `optmoe::lora_forward` custom op, which selective checkpointing saves like `persistent_forward`.
+
+**Fallback matrix.** The fused checks below decide between the modes; the dispatch mode has its own, much shorter list. Under `expert_parallel_fallback_on_unsupported: true` (the default) a `optmoe` that cannot run in the requested mode logs the reason and degrades; with `false` it raises with the reason.
+
+| Condition | Checked | `fused` (forced) | `auto` | `dispatch` (forced) |
+|-----------|---------|------------------|--------|---------------------|
+| `optmoe` package not installed | config load | `torch` | `torch` | `torch` |
+| an adapter is configured and the config does not qualify for a fused LoRA precision (see above; `expert_parallel_optmoe_fused_lora: false` for BF16 bases), or a `*_lora` precision without `adapter: lora` | config load | `torch` | `dispatch` | `dispatch` |
+| an adapter is configured and the experts do not match the route: not packed `NVFP4Tensor`s on SM100 for `nvfp4_lora`, packed NVFP4 for the BF16 LoRA precisions | after model build | `torch` | `dispatch` | `dispatch` |
+| quantized loading (`load_in_4bit`, `load_in_8bit`, `gptq`, `model_quantization_config`) | config load | `torch` | `dispatch` | `dispatch` |
+| compute capability other than SM90/SM100 (SM80, SM120, ...) | after model build | `torch` | `dispatch` | `dispatch` |
+| `hidden_size % 256 != 0` or expert intermediate size `% 128 != 0` | after model build | `torch` | `dispatch` | `dispatch` |
+| expert biases, a non-SiLU gate, a custom `_apply_gate` (e.g. `alpha`), or a clamped SwiGLU (`limit`/`swiglu_limit`; the fused backward has no clamp yet) | after model build | `torch` | `dispatch` | `dispatch` |
+| experts not in HF `gate_up_proj [E, 2I, H]` / `down_proj [E, H, I]` layout (non-gated, transposed, interleaved, post-expert norm), or MoE layers with different shapes | after model build | `torch` | `dispatch` | `dispatch` |
+| the precision does not match the architecture (table above) | after model build | `torch` | `dispatch` | `dispatch` |
+| no CUDA, or compute capability below SM80 | after model build | `torch` | `torch` | `torch` |
+| the EP group spans more than one host (symmetric memory is node-local) | runtime build | error | error | error |
+
+"`torch`" means `expert_parallel_backend: torch` with whichever local kernel the config names (so a forced `fused` with an adapter the fused LoRA precisions do not cover and `use_sonicmoe: true` lands on `torch` + SonicMoE; the default `auto` lands on `dispatch` + SonicMoE). There is no `model_type` gate: any HF MoE whose experts match the layout above is accepted by the fused mode, and any HF MoE the local kernel accepts by the dispatch mode.
+
+#### Dispatch mode
+
+Every rank publishes its tokens, routing and weights into its own symmetric buffers; after a barrier each rank pulls exactly the rows routed to its experts (`optmoe::pack_peer_rows` over NVLink) into a fixed layout of `expert_parallel_size * capacity` rows (row `s * capacity + t` is token `t` of rank `s`, or a zero row with all `-1` ids), runs the configured local kernel on them through the same `_run_local` path as `deep_ep` / `torch`, and pushes the expert outputs back into per-token slots of the source ranks, which sum them in FP32. Backward is the same two transfers with the payloads swapped, so routing-weight gradients flow like the torch backend's. Rows travel as BF16; the local kernel sets the compute precision (`expert_parallel_optmoe_precision` does not apply).
+
+The layout is a pure function of the routing: there is no host-side count, no sort and no `.item()`, so the layer stays `torch.compile`-clean; the price is that the local kernel sees the fixed `expert_parallel_size * capacity` rows (sentinel rows are zero-compute in grouped_mm, SonicMoE and ScatterMoE). The capacity is sized like the fused runtime (`sequence_len * max(micro_batch_size, eval_batch_size) / context_parallel_size`). Selective checkpointing replays the transfers on recompute by default; `expert_parallel_save_dispatch: true` keeps the dispatch/combine outputs instead, as it keeps the torch all-to-all outputs. `expert_parallel_optmoe_compact: true` hands the local kernel only the routed rows at the cost of one device-to-host count per layer (`optmoe::peer_count_to_host`, always saved under checkpointing like the torch backend's split counts; it breaks `fullgraph` compilation the same way). Adding `expert_parallel_optmoe_bounded: true` removes that stall: each layer receives into a bound from its high-water routed count (filled to SonicMoE's own row bucket) and the count is read only after the local kernel was issued; outputs and gradients stay bitwise those of the compact rows, and a layer whose count exceeds its bound re-runs exactly (8xH100 checkpointed layer 19.2 -> 18.7 ms, 8xB200 12.5 -> 11.9 ms; `packages/optmoe/docs/compose-design.md` 5.7). `expert_parallel_dispatch_chunks` does not apply. `NCCL_MAX_CTAS` is exported (and checked) only while the fused mode is still possible for the config; a forced `dispatch` mode, an adapter or quantized loading skip it.
+
+**Runtime.** The plugin builds one runtime per process in `post_model_load` on the resolved EP group, sized for `sequence_len * max(micro_batch_size, eval_batch_size) / context_parallel_size` tokens per rank (rounded up to the kernel's token alignment), with one symmetric buffer shared by every MoE layer. At train begin, after the model is wrapped, a callback runs `OptMoERuntime.prepare` (one forward and backward on synthetic inputs with the configured tokens per rank, weight dtype and LoRA rank), so every rank compiles and loads the fused kernels before any rank starts one; a kernel left waiting in the cross-rank barrier for a peer that is still compiling traps after 60 s. It is destroyed in `post_train_unload`. Under FSDP2 the expert weights are read with `.to_local()` and keep the usual expert grad scaling. The forward and backward are `torch.library` custom ops (`optmoe::persistent_forward` / `persistent_backward`) with fake implementations and no host syncs in the seam, so the EP layer compiles under `torch_compile: true` without graph breaks (the four-GPU compile parity test, dp_shard 2 x EP 2 in BF16, passes on B200 against a compiled torch reference); nothing from the forward is retained (backward restages the inputs and recomputes). Selective checkpointing always saves the fused op's output and the router `topk`, and reentrant checkpointing is rejected as for `torch`.
+
+**SM reservation.** The persistent kernels spin on all but 16 SMs. FSDP's NCCL collectives must fit in the reserved SMs or they deadlock against the spinning grid, so the plugin exports `NCCL_MAX_CTAS = 16 // 2 = 8` (`16 // 3 = 5` under HSDP, `dp_replicate_size > 1`) through the plugin `get_distributed_env` hook, before any process group exists. A user-set `NCCL_MAX_CTAS` wins but must not exceed that value; `pre_model_load` raises otherwise. Launchers that create the process group before Axolotl loads its config must export the variable themselves.
+
+`expert_parallel_dispatch_chunks` and `expert_parallel_save_dispatch` do not apply (communication overlaps inside the kernels). The native fused backward currently needs a single host, `intermediate % 256 == 0` and BF16 (or blockwise FP8 on SM90); otherwise the runtime uses its NCCL reference backward behind the same op.
 
 ## Requirements
 

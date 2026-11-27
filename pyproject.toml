@@ -98,6 +98,7 @@ blackwell = [
     "quack-kernels[cu13]==0.6.5 ; sys_platform == 'linux'",
 ]
 modal = ["modal==1.6.3"]
+optmoe = ["optmoe==0.1.1 ; sys_platform == 'linux'"]
 baseten = ["truss==0.18.30"]
 coreweave = ["boto3>=1.35"]
 ringmaster = [

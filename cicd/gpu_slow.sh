@@ -21,9 +21,10 @@ case "${MULTIGPU_TEST_SUITE}" in
     selection=(-k "not test_axolotl_gdn_cp_parity and not test_fla_cp_four_rank_parity")
     ;;
   gpu_slow_four_rank)
+    bash cicd/install_optmoe.sh
     required_gpus=4
-    tests=(tests/e2e/multigpu/test_ringmaster.py)
-    selection=(-k test_fla_cp_four_rank_parity)
+    tests=(tests/e2e/multigpu/test_ringmaster.py tests/e2e/multigpu/test_ep_optmoe.py)
+    selection=(-k "test_fla_cp_four_rank_parity or test_optmoe_fsdp2_parity")
     ;;
   *) echo "Unknown slow GPU suite: $MULTIGPU_TEST_SUITE" >&2; exit 1 ;;
 esac

@@ -1,0 +1,83 @@
+# Qwen3-30B-A3B LoRA on the modelopt NVFP4 checkpoint with optmoe's fused NVFP4 LoRA kernels:
+# the packed NVFP4 experts stay frozen on every rank and the SM100 persistent kernels train a
+# PEFT expert adapter on them (expert_parallel_optmoe_precision: nvfp4_lora). One node of
+# four B200s, EP4 (or --num-processes 8 with dp_shard_size: 2 for EP4 x dp_shard 2).
+#
+#   axolotl train examples/expert_parallel/qwen3_30ba3b_nvfp4_lora_optmoe.yaml --num-processes 4
+#
+# The kernels plugin loads the NVFP4 experts and hands the adapter to the experts module
+# (use_sonicmoe); merge-aware training is the SonicMoE path and must be off here. Only the
+# adapter is saved; merging it back into the NVFP4 base is `axolotl merge-lora` with the
+# SonicMoE merge-aware path (examples/qwen3/30b-a3b-nvfp4-lora.yaml).
+base_model: nvidia/Qwen3-30B-A3B-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+use_sonicmoe: true
+nvfp4_merge_aware: false
+strict: false
+
+expert_parallel_size: 4
+expert_parallel_backend: optmoe
+expert_parallel_optmoe_precision: nvfp4_lora   # auto resolves to it on this base too
+expert_parallel_fallback_on_unsupported: false
+
+chat_template: tokenizer_default
+eot_tokens:
+  - "<|im_end|>"
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+dataset_prepared_path: last_run_prepared
+val_set_size: 0
+output_dir: ./outputs/qwen3-30b-a3b-nvfp4-lora-optmoe
+
+sequence_len: 2048
+sample_packing: true
+attn_implementation: flash_attention_2
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+
+bf16: auto
+tf32: true
+activation_checkpointing: true   # non-reentrant; reentrant is rejected with EP
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT   # required with EP
+  reshard_after_forward: true
+
+save_only_model: true
+logging_steps: 1
+saves_per_epoch: 1
+seed: 42
