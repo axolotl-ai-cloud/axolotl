@@ -27,6 +27,7 @@ from .nvfp4_lora import (
     local_expert_lora,
     map_adapter,
     register_layer,
+    unregister_layers,
 )
 
 LOG = get_logger(__name__)
@@ -62,7 +63,7 @@ def config_reason(cfg) -> str | None:
     ):
         return (
             "the fused LoRA path needs lora_target_parameters on experts.gate_up_proj and "
-            "experts.down_proj"
+            "experts.down_proj of every layer (no per-layer targets)"
         )
     return None
 
@@ -93,6 +94,7 @@ class FusedLoraState:
 
     def close(self) -> None:
         self._hook.remove()
+        unregister_layers(self.layers.values())
         self.layers.clear()
         self.cache.invalidate()
 

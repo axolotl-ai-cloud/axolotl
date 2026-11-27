@@ -142,7 +142,11 @@ def _apply_gate_is_plain(experts) -> bool:
     act_fn = getattr(experts, "act_fn", None)
     if act_fn is None:
         return False
-    probe = torch.linspace(-6.0, 6.0, 64, dtype=torch.float32).reshape(2, 32)
+    # Span far past any plausible clamp so a clamped or saturating gate cannot pass by luck.
+    tail = torch.logspace(1, 4, 16, dtype=torch.float32)
+    probe = torch.cat(
+        [torch.linspace(-8.0, 8.0, 32, dtype=torch.float32), -tail, tail]
+    ).reshape(2, 32)
     try:
         with torch.no_grad():
             got = experts._apply_gate(probe)
@@ -151,7 +155,7 @@ def _apply_gate_is_plain(experts) -> bool:
     gate, up = probe.chunk(2, dim=-1)
     want = act_fn(gate) * up
     return tuple(got.shape) == tuple(want.shape) and torch.allclose(
-        got.float(), want, atol=1e-5, rtol=1e-5
+        got.float(), want, atol=1e-5, rtol=1e-4
     )
 
 
@@ -645,6 +649,11 @@ class ExpertParallelPlugin(BasePlugin):
             PRECISION as NVFP4_LORA,
         )
 
+        if find_spec("optmoe_deepgemm") is None:
+            return (
+                "the optmoe kernel extension is not installed "
+                "(python -m optmoe.install_kernels)"
+            )
         precision = getattr(cfg, "expert_parallel_optmoe_precision", None) or "auto"
         if getattr(cfg, "adapter", None):
             reason = ExpertParallelPlugin._optmoe_lora_config_reason(cfg, precision)
@@ -828,6 +837,12 @@ class ExpertParallelPlugin(BasePlugin):
                         resolved = lora_precision(precision, capability)
                     except ValueError as exc:
                         return None, str(exc)
+                    if reason is None and (hidden % 256 or intermediate % 256):
+                        # the fused LoRA precisions run only on the persistent backward
+                        reason = (
+                            f"{name}: fused LoRA needs hidden and intermediate multiples "
+                            f"of 256, got {hidden} and {intermediate}"
+                        )
                 if reason is not None:
                     return None, reason
                 precision = resolved
@@ -1042,7 +1057,12 @@ class ExpertParallelPlugin(BasePlugin):
 
             if model is not None:
                 tag_layers(model)
-            set_state(Nvfp4LoraState(repo_id=getattr(cfg, "base_model", None)))
+            set_state(
+                Nvfp4LoraState(
+                    repo_id=getattr(cfg, "base_model", None),
+                    revision=getattr(cfg, "revision_of_model", None),
+                )
+            )
         elif precision in fused_lora.PRECISIONS:
             os.environ["OPTMOE_LORA_MERGED_CACHE"] = (
                 getattr(cfg, "expert_parallel_optmoe_lora_merged_cache", None)

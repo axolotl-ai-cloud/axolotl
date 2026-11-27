@@ -47,6 +47,15 @@ class TestConfigReason:
             ({"lora_dropout": 0.1}, "lora_dropout: 0"),
             ({"use_sonicmoe": False}, "use_sonicmoe: true"),
             ({"lora_target_parameters": ["experts.gate_up_proj"]}, "down_proj"),
+            (
+                {
+                    "lora_target_parameters": [
+                        "layers.0.mlp.experts.gate_up_proj",
+                        "layers.0.mlp.experts.down_proj",
+                    ]
+                },
+                "every layer",
+            ),
         ],
     )
     def test_unsupported_adapters_keep_the_dispatch_mode(
@@ -104,6 +113,12 @@ class TestModelResolution:
             ((9, 0), "mxfp8", _qwen3_model, "requires SM100"),
             ((10, 0), "fp8", _qwen3_model, "requires SM90"),
             ((10, 0), "mxfp8", _nvfp4_model, "packed NVFP4"),
+            (
+                (9, 0),
+                "bf16",
+                lambda: _qwen3_model(intermediate=384),
+                "multiples of 256",
+            ),
         ],
     )
     def test_unsupported_take_the_dispatch_mode(
@@ -277,6 +292,24 @@ class TestState:
         assert state.layer(experts, 2.0) is layer
         assert len(lora_package.registered) == 1
         state.close()
+
+    def test_close_drops_the_package_registry_entries(self, lora_package):
+        lora_package._LAYERS = {}
+
+        def register(entry, cache):
+            entry.key = len(lora_package._LAYERS)
+            lora_package._LAYERS[entry.key] = (entry, cache)
+
+        lora_package.register_layer = register
+        other = SimpleNamespace(key=99)
+        lora_package._LAYERS[99] = (other, None)
+        state = fused_lora.FusedLoraState()
+        model = _qwen3_model()
+        _adapt(model)
+        assert state.prepare_layers(model) == 1
+        assert len(lora_package._LAYERS) == 2
+        state.close()
+        assert list(lora_package._LAYERS) == [99]
 
     def test_package_without_register_layer_still_builds(self, lora_package):
         del lora_package.register_layer

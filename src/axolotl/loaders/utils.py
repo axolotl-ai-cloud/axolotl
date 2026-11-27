@@ -282,9 +282,14 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig:
         )
 
     if getattr(model_config, "quantization_config", None) is None:
-        quantization_config = modelopt_hf_quant_config(model_config_name, config_kwargs)
-        if quantization_config is not None:
-            model_config.quantization_config = quantization_config
+        # the sidecar describes the weights, which base_model_config may not ship
+        for source in dict.fromkeys((cfg.base_model, model_config_name)):
+            if not source:
+                continue
+            quantization_config = modelopt_hf_quant_config(source, config_kwargs)
+            if quantization_config is not None:
+                model_config.quantization_config = quantization_config
+                break
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():

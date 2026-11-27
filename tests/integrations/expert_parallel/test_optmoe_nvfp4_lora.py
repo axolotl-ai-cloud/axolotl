@@ -473,6 +473,24 @@ class TestActivationScales:
         assert len(scales) == len(self.SCALES)
         assert scales[(0, 3, "up_proj")] == pytest.approx(0.33)
 
+    def test_scales_are_read_at_the_weights_revision(self, monkeypatch):
+        import huggingface_hub
+
+        seen = []
+
+        def cached(repo_id, filename, revision=None):
+            seen.append(("cache", filename, revision))
+            return None
+
+        def download(repo_id, filename, revision=None):
+            seen.append(("hub", filename, revision))
+            raise OSError("offline")
+
+        monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+        assert nvfp4_lora.read_input_scales("org/model", "pinned") == {}
+        assert seen and {revision for _, _, revision in seen} == {"pinned"}
+
     def test_missing_index_defaults_to_unit_scales(self, tmp_path, caplog):
         with caplog.at_level("WARNING"):
             assert nvfp4_lora.read_input_scales(str(tmp_path)) == {}
@@ -594,7 +612,9 @@ class TestRuntimeLifecycle:
             "_resolve_ep_group",
             staticmethod(lambda cfg: object()),
         )
-        monkeypatch.setattr(nvfp4_lora, "read_input_scales", lambda repo: {})
+        monkeypatch.setattr(
+            nvfp4_lora, "read_input_scales", lambda repo, revision=None: {}
+        )
         cfg = _lora_cfg(
             expert_parallel_optmoe_precision="nvfp4_lora",
             activation_checkpointing={"enabled": False},

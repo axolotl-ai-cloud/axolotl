@@ -101,7 +101,7 @@ def training_checks():
         fully_shard(model, mesh=dense_mesh, **kwargs)
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
         forward = torch.compile(model) if compiled else model
-        history, starts = [], []
+        history, starts, updated = [], [], []
         for step in range(2):
             if starting_weights is not None:
                 # identical pre-step weights keep near-tie top-k routing from diverging
@@ -130,13 +130,14 @@ def training_checks():
                 grads[name] = local.clone()
             optimizer.step()
             history.append(grads)
-        weights = {
-            n: p.to_local().detach().clone() for n, p in model.named_parameters()
-        }
+            # every step's update is compared: the next step overwrites these weights
+            updated.append(
+                {n: p.to_local().detach().clone() for n, p in model.named_parameters()}
+            )
         plugin.post_train_unload(cfg)
         del optimizer, model, forward
         torch.cuda.synchronize()
-        return history, weights, starts
+        return history, updated, starts
 
     # Inductor's bf16 kernels round the router logits differently from eager, and a token
     # one bf16 ulp from the top-k boundary then routes to another expert, so compiled runs
@@ -157,8 +158,9 @@ def training_checks():
                     name
                 ].float().norm().clamp_min(1e-8)
                 worst = max(worst, rel.item())
-        for name, weight in weights.items():
-            torch.testing.assert_close(weight, ref_weights[name], atol=2e-4, rtol=0.02)
+        for step_weights, expected in zip(weights, ref_weights, strict=True):
+            for name, weight in step_weights.items():
+                torch.testing.assert_close(weight, expected[name], atol=2e-4, rtol=0.02)
         error = torch.tensor(worst, device="cuda")
         dist.all_reduce(error, op=dist.ReduceOp.MAX)
         assert error.item() < 0.03, (

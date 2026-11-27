@@ -38,8 +38,17 @@ _INPUT_SCALE_RE = re.compile(
 )
 
 
+_INDEXED_TARGET_RE = re.compile(r"(^|\.)\d+(\.|$)")
+
+
 def _targets_expert_param(targets, name: str) -> bool:
-    return any(str(t) == name or str(t).endswith(f".{name}") for t in targets or ())
+    """Whether a target names ``name`` on every layer. A target with a layer index adapts only
+    that layer, and one runtime precision serves all of them."""
+    return any(
+        (str(t) == name or str(t).endswith(f".{name}"))
+        and not _INDEXED_TARGET_RE.search(str(t))
+        for t in targets or ()
+    )
 
 
 def config_reason(cfg) -> str | None:
@@ -61,7 +70,7 @@ def config_reason(cfg) -> str | None:
     ):
         return (
             "nvfp4_lora needs lora_target_parameters on experts.gate_up_proj and "
-            "experts.down_proj"
+            "experts.down_proj of every layer (no per-layer targets)"
         )
     if getattr(cfg, "nvfp4_merge_aware", None):
         return (
@@ -156,32 +165,37 @@ def layer_index(module_name: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _checkpoint_file(repo_id: str, filename: str) -> str:
+def _checkpoint_file(repo_id: str, filename: str, revision: str | None = None) -> str:
     """A checkpoint file from a local snapshot dir, the HF cache, or the hub."""
     if os.path.isdir(repo_id):
         return os.path.join(repo_id, filename)
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
-    cached = try_to_load_from_cache(repo_id, filename)
-    return cached if isinstance(cached, str) else hf_hub_download(repo_id, filename)
+    cached = try_to_load_from_cache(repo_id, filename, revision=revision)
+    if isinstance(cached, str):
+        return cached
+    return hf_hub_download(repo_id, filename, revision=revision)
 
 
-def _load_index(repo_id: str) -> dict[str, str]:
+def _load_index(repo_id: str, revision: str | None = None) -> dict[str, str]:
     name = "model.safetensors.index.json"
     if os.path.isdir(repo_id) and not os.path.exists(os.path.join(repo_id, name)):
         with safe_open(
             os.path.join(repo_id, "model.safetensors"), framework="pt"
         ) as handle:
             return dict.fromkeys(handle.keys(), "model.safetensors")
-    with open(_checkpoint_file(repo_id, name)) as handle:
+    with open(_checkpoint_file(repo_id, name, revision)) as handle:
         return json.load(handle)["weight_map"]
 
 
-def read_input_scales(repo_id: str) -> dict[tuple[int, int, str], float]:
+def read_input_scales(
+    repo_id: str, revision: str | None = None
+) -> dict[tuple[int, int, str], float]:
     """``{(layer, expert, projection): input_scale}`` from the checkpoint's safetensors
-    (modelopt W4A4 static activation scales); empty for weight-only exports."""
+    (modelopt W4A4 static activation scales) at the revision the weights load from; empty for
+    weight-only exports."""
     try:
-        weight_map = _load_index(repo_id)
+        weight_map = _load_index(repo_id, revision)
     except Exception as exc:  # pylint: disable=broad-except
         LOG.warning(
             f"nvfp4_lora: cannot read the safetensors index of {repo_id!r} ({exc}); "
@@ -198,7 +212,9 @@ def read_input_scales(repo_id: str) -> dict[tuple[int, int, str], float]:
         )
     scales: dict[tuple[int, int, str], float] = {}
     for shard, entries in by_shard.items():
-        with safe_open(_checkpoint_file(repo_id, shard), framework="pt") as handle:
+        with safe_open(
+            _checkpoint_file(repo_id, shard, revision), framework="pt"
+        ) as handle:
             for key, index in entries:
                 scales[index] = float(handle.get_tensor(key).float().reshape(-1)[0])
     return scales
@@ -232,18 +248,36 @@ def register_layer(module: str, entry, cache) -> None:
         register(entry, cache)
 
 
+def unregister_layers(entries) -> None:
+    """Drop the package's registry entries for these layers: it holds each layer and its cache
+    strongly, and an ``nvfp4_lora`` layer owns the packed experts on the GPU."""
+    try:
+        registry = getattr(importlib.import_module("optmoe.lora"), "_LAYERS", None)
+    except ImportError:
+        return
+    if registry is None:
+        return
+    for entry in entries:
+        registry.pop(getattr(entry, "key", None), None)
+
+
 class Nvfp4LoraState:
     """Per-process state of the ``nvfp4_lora`` path: the shared requant cache, one
     ``Nvfp4LoraExperts`` per MoE layer (built at train begin, else at its first forward)
     and the checkpoint's static activation scales."""
 
-    def __init__(self, repo_id: str | None = None, backend: str | None = None):
+    def __init__(
+        self,
+        repo_id: str | None = None,
+        backend: str | None = None,
+        revision: str | None = None,
+    ):
         from optmoe.nvfp4_lora import RequantCache
 
         self.cache = RequantCache()
         self.layers: dict[int, object] = {}
         self.backend = backend
-        self.input_scales = read_input_scales(repo_id) if repo_id else {}
+        self.input_scales = read_input_scales(repo_id, revision) if repo_id else {}
         self._hook = register_optimizer_step_post_hook(
             lambda *_: self.cache.invalidate()
         )
@@ -257,6 +291,7 @@ class Nvfp4LoraState:
 
     def close(self) -> None:
         self._hook.remove()
+        unregister_layers(self.layers.values())
         self.layers.clear()
         self.cache.invalidate()
 

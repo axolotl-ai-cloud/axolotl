@@ -57,3 +57,13 @@ def test_config_json_quantization_config_wins(tmp_path):
 def test_unquantized_export_untouched(tmp_path):
     config = load_model_config(_export(tmp_path, hf_quant=False))
     assert getattr(config, "quantization_config", None) is None
+
+
+def test_sidecar_is_read_from_the_weights_when_the_config_lives_elsewhere(tmp_path):
+    weights, architecture = tmp_path / "weights", tmp_path / "architecture"
+    weights.mkdir()
+    architecture.mkdir()
+    cfg = _export(weights)
+    _export(architecture, hf_quant=False)
+    cfg.base_model_config = str(architecture)
+    assert load_model_config(cfg).quantization_config["quant_algo"] == "NVFP4"

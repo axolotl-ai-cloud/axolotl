@@ -164,6 +164,9 @@ def optmoe_package(monkeypatch):
     module.OptMoERuntime = _FakeRuntime
     module.OptMoEDispatchRuntime = _FakeDispatchRuntime
     monkeypatch.setitem(sys.modules, "optmoe", module)
+    extension = types.ModuleType("optmoe_deepgemm")
+    extension.__spec__ = importlib.machinery.ModuleSpec("optmoe_deepgemm", None)
+    monkeypatch.setitem(sys.modules, "optmoe_deepgemm", extension)
     _FakeRuntime.instances = []
     _FakeDispatchRuntime.instances = []
     return module
@@ -696,6 +699,35 @@ class TestModelFallback:
             ExpertParallelPlugin().post_model_build(cfg, model)
         assert "custom gated activation" in caplog.text
         assert cfg.expert_parallel_backend == "torch"
+
+    def test_clamped_gate_override_is_not_plain(self):
+        experts = _qwen3_model().mlp.experts
+
+        def _apply_gate(self, gate_up):
+            gate, up = gate_up.chunk(2, dim=-1)
+            return self.act_fn(gate.clamp(-8, 8)) * up
+
+        experts.__class__ = type(
+            "ClampedGateExperts", (type(experts),), {"_apply_gate": _apply_gate}
+        )
+        assert not plugin_mod._apply_gate_is_plain(experts)
+
+    def test_missing_kernel_extension_takes_the_dispatch_mode(
+        self, optmoe_package, cuda_capability, monkeypatch
+    ):
+        cuda_capability((9, 0))
+        find_spec = plugin_mod.find_spec
+        monkeypatch.setattr(
+            plugin_mod,
+            "find_spec",
+            lambda name: None if name == "optmoe_deepgemm" else find_spec(name),
+        )
+        cfg = _cfg()
+        reason = ExpertParallelPlugin._optmoe_fused_config_reason(cfg)
+        assert "optmoe.install_kernels" in reason
+        ExpertParallelPlugin().post_model_build(cfg, _qwen3_model())
+        assert cfg.expert_parallel_backend == "optmoe"
+        assert cfg.expert_parallel_optmoe_mode == "dispatch"
 
     @pytest.mark.parametrize("capability", [(9, 0), (10, 0)])
     def test_supported_model_keeps_backend(

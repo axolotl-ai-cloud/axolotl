@@ -220,12 +220,17 @@ def fsdp2_load_full_state_dict(
 
     # keep_vars: tell params from buffers by type, since named_parameters() keys keep
     # the `_checkpoint_wrapped_module.` segment that state_dict() strips.
+    from axolotl.integrations.expert_parallel.nvfp4_lora import is_nvfp4_tensor
+
     meta_sharded_sd = model.state_dict(keep_vars=True)
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
-        if not sharded_meta_param.is_meta and not hasattr(
-            sharded_meta_param, "device_mesh"
+        if (
+            not sharded_meta_param.is_meta
+            and not hasattr(sharded_meta_param, "device_mesh")
+            and not sharded_meta_param.requires_grad
+            and is_nvfp4_tensor(sharded_meta_param)
         ):
             # kept real through the meta move (nvfp4_lora's rank-local frozen experts)
             sharded_sd[param_name] = sharded_meta_param

@@ -964,9 +964,7 @@ class TestMeshTopology:
         ]
         for p in procs:
             p.start()
-        results = [q.get(timeout=120) for _ in range(4)]
-        for p in procs:
-            p.join(timeout=20)
+        results = _collect_worker_results(procs, q, 4)
         for rank, same, shared, err in results:
             assert err is None, (rank, err)
             assert same, rank
