@@ -610,6 +610,8 @@ class BailingMoeV3ForCausalLM(BailingMoeV3PreTrainedModel, GenerationMixin):
         logits_to_keep: int | torch.Tensor = 0,
         **kwargs: Unpack[TransformersKwargs],
     ) -> CausalLMOutputWithPast:
+        # transformers 5.24 generate() passes the KV cache as `cache`
+        past_key_values = kwargs.pop("cache", past_key_values)
         outputs: BaseModelOutputWithPast = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,

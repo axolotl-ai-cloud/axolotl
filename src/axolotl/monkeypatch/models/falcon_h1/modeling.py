@@ -18,6 +18,7 @@ from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,
     is_cp_active,
 )
+from axolotl.monkeypatch.utils import set_layer_forward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -260,7 +261,7 @@ def patch_falcon_h1_modeling_packing():
     def patched_mixer_forward(
         self,
         hidden_states,
-        cache_params=None,
+        cache=None,
         cache_position=None,
         attention_mask=None,
         seq_idx=None,
@@ -273,7 +274,7 @@ def patch_falcon_h1_modeling_packing():
         if mod.is_fast_path_available and "cuda" in self.in_proj.weight.device.type:
             return self.cuda_kernels_forward(
                 hidden_states,
-                cache_params,
+                cache,
                 cache_position,
                 attention_mask,
                 seq_idx=seq_idx,
@@ -290,9 +291,7 @@ def patch_falcon_h1_modeling_packing():
             and attention_mask.shape[0] > 1
         ):
             hidden_states = (hidden_states * attention_mask[:, :, None]).to(dtype)
-        return self.torch_forward(
-            hidden_states, cache_params, cache_position, attention_mask
-        )
+        return self.torch_forward(hidden_states, cache, cache_position, attention_mask)
 
     FalconH1Mixer.forward = patched_mixer_forward
 
@@ -304,14 +303,14 @@ def patch_falcon_h1_modeling_packing():
         attention_mask=None,
         mamba_attention_mask=None,
         position_ids=None,
-        past_key_values=None,
+        cache=None,
         output_attentions=False,
         use_cache=False,
         cache_position=None,
         position_embeddings=None,
         **kwargs,
     ):
-        is_decoding = past_key_values is not None and past_key_values.has_previous_state
+        is_decoding = cache is not None and cache.has_previous_state
         seq_idx = (
             get_seq_idx(position_ids)
             if position_ids is not None and not is_decoding
@@ -323,7 +322,7 @@ def patch_falcon_h1_modeling_packing():
 
         mamba_hidden_states = self.mamba(
             hidden_states=hidden_states,
-            cache_params=past_key_values,
+            cache=cache,
             cache_position=cache_position,
             attention_mask=mamba_attention_mask,
             seq_idx=seq_idx,
@@ -334,7 +333,7 @@ def patch_falcon_h1_modeling_packing():
             hidden_states=hidden_states * self.attention_in_multiplier,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            past_key_values=past_key_values,
+            cache=cache,
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
@@ -356,6 +355,6 @@ def patch_falcon_h1_modeling_packing():
             outputs += (self_attn_weights,)
         return outputs
 
-    FalconH1DecoderLayer.forward = patched_decoder_forward
+    set_layer_forward(FalconH1DecoderLayer, patched_decoder_forward)
 
     LOG.info("Applied Falcon-H1 sample packing patch (seq_idx threading into Mamba2)")

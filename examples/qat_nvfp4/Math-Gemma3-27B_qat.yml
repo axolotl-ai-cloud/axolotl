@@ -26,7 +26,7 @@ output_dir: ./outputs/qat_out_math_gemma27/
 
 sequence_len: 4096
 sample_packing: true
-attn_implementation: flash_attention_2
+attn_implementation: sdpa  # transformers >= 5.24 refuses flash attention on Gemma3ForConditionalGeneration
 
 qat:
   activation_dtype: nvfp4

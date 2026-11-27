@@ -11,6 +11,8 @@ from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
+from axolotl.monkeypatch.models.mamba_utils import kernelized_copy
+from axolotl.monkeypatch.utils import set_layer_forward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -61,11 +63,12 @@ def get_cu_seqlens(position_ids):
     )
 
 
-def _causal_conv1d_dense(module, x, conv1d, activation):
+def _causal_conv1d_dense(module, layer, x, conv1d, activation):
     """Causal conv over an unpacked ``[B, D, T]`` batch, mirroring the stock fallback order."""
     weight = conv1d.weight.squeeze(1)
     if getattr(module, "causal_conv1d_fn", None) is not None:
-        return module.causal_conv1d_fn(x, weight, conv1d.bias, activation=activation)
+        conv_fn = kernelized_copy(layer, module.causal_conv1d_fn)
+        return conv_fn(x, weight, conv1d.bias, activation=activation)
     if fla_causal_conv1d is not None:
         out, _ = fla_causal_conv1d(
             x=x.transpose(1, 2),
@@ -83,7 +86,7 @@ def _patched_decoder_forward(
     position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
-    past_key_values=None,
+    cache=None,
     **kwargs,
 ) -> torch.FloatTensor:
     """Decoder layer forward that passes position_ids through to linear attention."""
@@ -93,7 +96,7 @@ def _patched_decoder_forward(
     if self.block_type == "linear_attention":
         hidden_states = self.linear_attn(
             hidden_states=hidden_states,
-            cache_params=past_key_values,
+            cache=cache,
             attention_mask=attention_mask,
             position_ids=position_ids,
             **kwargs,
@@ -103,7 +106,7 @@ def _patched_decoder_forward(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            past_key_values=past_key_values,
+            cache=cache,
             position_embeddings=position_embeddings,
             **kwargs,
         )
@@ -143,7 +146,7 @@ def _make_qwen3_5_gated_delta_forward(module):
     def patched_forward(
         self,
         hidden_states: torch.Tensor,
-        cache_params=None,
+        cache=None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
@@ -154,8 +157,8 @@ def _make_qwen3_5_gated_delta_forward(module):
 
         batch_size, seq_len, _ = hidden_states.shape
 
-        use_precomputed_states = (
-            cache_params is not None and cache_params.has_previous_state(self.layer_idx)
+        use_precomputed_states = cache is not None and cache.has_previous_state(
+            self.layer_idx
         )
         cp_conv = getattr(self, "_axolotl_gdn_cp_conv", None)
         cp_chunk = getattr(self, "_axolotl_gdn_cp_chunk", None)
@@ -169,7 +172,7 @@ def _make_qwen3_5_gated_delta_forward(module):
         use_compiled_ops = (
             _FLA_COMPILED_OPS
             and not use_cp_kernels
-            and cache_params is None
+            and cache is None
             and not use_precomputed_states
         )
         cu_seqlens = None
@@ -209,10 +212,10 @@ def _make_qwen3_5_gated_delta_forward(module):
         if (
             use_precomputed_states
             and seq_len == 1
-            and not cache_params.layers[self.layer_idx].record_past
+            and not cache.layers[self.layer_idx].record_past
         ):
-            conv_state = cache_params.layers[self.layer_idx].conv_states[0]
-            mixed_qkv = module.causal_conv1d_update(
+            conv_state = cache.layers[self.layer_idx].conv_states[0]
+            mixed_qkv = kernelized_copy(self, module.causal_conv1d_update)(
                 mixed_qkv.transpose(1, 2),
                 conv_state,
                 self.conv1d.weight.squeeze(1),
@@ -220,7 +223,7 @@ def _make_qwen3_5_gated_delta_forward(module):
                 self.activation,
             ).transpose(1, 2)
         elif use_cp_kernels:
-            if cache_params is not None:
+            if cache is not None:
                 raise ValueError("GDN context parallelism requires use_cache=False")
             mixed_qkv = cp_conv(
                 mixed_qkv,
@@ -238,8 +241,8 @@ def _make_qwen3_5_gated_delta_forward(module):
                 pos_for_varlen,
             )
         elif cu_seqlens is not None:
-            if cache_params is not None:
-                cache_params.update_conv_state(
+            if cache is not None:
+                cache.update_conv_state(
                     mixed_qkv.transpose(1, 2),
                     self.layer_idx,
                     conv_kernel_size=self.conv_kernel_size,
@@ -254,14 +257,14 @@ def _make_qwen3_5_gated_delta_forward(module):
             )
         else:
             mixed_qkv = mixed_qkv.transpose(1, 2)
-            if cache_params is not None:
-                mixed_qkv = cache_params.update_conv_state(
+            if cache is not None:
+                mixed_qkv = cache.update_conv_state(
                     mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
                 )
             mixed_qkv = _causal_conv1d_dense(
-                module, mixed_qkv, self.conv1d, self.activation
+                module, self, mixed_qkv, self.conv1d, self.activation
             )
-            if cache_params is not None:
+            if cache is not None:
                 mixed_qkv = mixed_qkv[:, :, -seq_len:]
             mixed_qkv = mixed_qkv.transpose(1, 2)
 
@@ -281,7 +284,7 @@ def _make_qwen3_5_gated_delta_forward(module):
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         recurrent_state = (
-            cache_params.layers[self.layer_idx].recurrent_states[0]
+            cache.layers[self.layer_idx].recurrent_states[0]
             if use_precomputed_states
             else None
         )
@@ -311,17 +314,17 @@ def _make_qwen3_5_gated_delta_forward(module):
             )[0]
             last_recurrent_state = None
         elif use_precomputed_states and seq_len == 1:
-            core_attn_out, last_recurrent_state = (
-                module.torch_recurrent_gated_delta_rule(
-                    query,
-                    key,
-                    value,
-                    g=g,
-                    beta=beta,
-                    initial_state=recurrent_state,
-                    output_final_state=cache_params is not None,
-                    use_qk_l2norm_in_kernel=True,
-                )
+            core_attn_out, last_recurrent_state = kernelized_copy(
+                self, module.torch_recurrent_gated_delta_rule
+            )(
+                query,
+                key,
+                value,
+                g=g,
+                beta=beta,
+                initial_state=recurrent_state,
+                output_final_state=cache is not None,
+                use_qk_l2norm_in_kernel=True,
             )
         elif cu_seqlens is not None:
             core_attn_out, last_recurrent_state = fla_chunk_gated_delta_rule(
@@ -331,24 +334,26 @@ def _make_qwen3_5_gated_delta_forward(module):
                 g=g,
                 beta=beta,
                 initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
+                output_final_state=cache is not None,
                 use_qk_l2norm_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )
         else:
-            core_attn_out, last_recurrent_state = module.torch_chunk_gated_delta_rule(
+            core_attn_out, last_recurrent_state = kernelized_copy(
+                self, module.torch_chunk_gated_delta_rule
+            )(
                 query,
                 key,
                 value,
                 g=g,
                 beta=beta,
                 initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
+                output_final_state=cache is not None,
                 use_qk_l2norm_in_kernel=True,
             )
 
-        if cache_params is not None:
-            cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
+        if cache is not None:
+            cache.update_recurrent_state(last_recurrent_state, self.layer_idx)
 
         core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
         z = z.reshape(-1, self.head_v_dim)
@@ -389,7 +394,9 @@ def _apply_packing_patches(
             f"flash_attention_2 this is typically slower than disabling "
             f"torch_compile entirely."
         )
-    getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
+    set_layer_forward(
+        getattr(module, f"{cls_prefix}DecoderLayer"), _patched_decoder_forward
+    )
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module)
 

@@ -14,7 +14,7 @@ def _native_forward(original_forward):
     def forward(
         self,
         hidden_states,
-        cache_params=None,
+        cache=None,
         attention_mask=None,
         segments=None,
         **kwargs,
@@ -30,7 +30,7 @@ def _native_forward(original_forward):
         return original_forward(
             self,
             hidden_states,
-            cache_params=cache_params,
+            cache=cache,
             attention_mask=attention_mask,
             **kwargs,
         )
@@ -64,15 +64,15 @@ class _MambaBackend:
     def forward(
         self,
         hidden_states,
-        cache_params=None,
+        cache=None,
         attention_mask=None,
         segments=None,
         **kwargs,
     ):
         return self._fla_forward(
             hidden_states,
-            cache_params=cache_params,
-            use_cache=cache_params is not None,
+            cache=cache,
+            use_cache=cache is not None,
             attention_mask=attention_mask,
             _axolotl_segments=segments,
             **kwargs,

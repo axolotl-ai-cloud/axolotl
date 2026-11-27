@@ -1,5 +1,7 @@
 """Tests for the Qwen4-Exp (Qwen3.8-Flash-Next) QSA and sample-packing monkeypatches."""
 
+import inspect
+
 import pytest
 import torch
 from transformers.masking_utils import create_causal_mask
@@ -13,8 +15,10 @@ from transformers.models.qwen4_exp.configuration_qwen4_exp import (  # noqa: E40
 
 def _torch_reference(dispatcher):
     """Unwrap a transformers hub-kernel ``Func`` back to its torch implementation."""
-    (cell,) = type(dispatcher).forward.__closure__
-    return cell.cell_contents.__wrapped__
+    forward = getattr(type(dispatcher), "forward", None)
+    if forward is not None:
+        dispatcher = inspect.getclosurevars(forward).nonlocals["func"]
+    return getattr(dispatcher, "__wrapped__", dispatcher)
 
 
 @pytest.fixture(autouse=True)

@@ -132,7 +132,9 @@ def test_cpu_fallback():
 
     calls = []
 
-    def original(self, hidden_states, position_embeddings, attention_mask, **kwargs):
+    def original(
+        self, hidden_states, position_embeddings, attention_mask, cache=None, **kwargs
+    ):
         calls.append(kwargs)
         return hidden_states, None
 

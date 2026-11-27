@@ -62,6 +62,8 @@ class MixLoraTrainer(AxolotlTrainer):
     @override
     def _save(self, output_dir=None, state_dict=None):
         super()._save(output_dir=output_dir, state_dict=state_dict)
+        if not self.args.should_save:
+            return
 
         output_path = output_dir if output_dir is not None else self.args.output_dir
 

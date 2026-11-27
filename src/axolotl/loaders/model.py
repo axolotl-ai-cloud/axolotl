@@ -1204,11 +1204,21 @@ class ModelLoader:
                 self.cfg.attn_implementation, self.cfg.attn_implementation
             )
             hf_impl = self._resolve_flash_attention_4(hf_impl)
+            hf_impl = self._gemma4_hybrid_attention(hf_impl)
             self.model_kwargs["attn_implementation"] = hf_impl
             self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _gemma4_hybrid_attention(self, hf_impl):
+        """Gemma 4 multimodal classes refuse flash attention; scope it to the text config."""
+        if not self.cfg.gemma4_hybrid_attn_impl or self.model_config.model_type not in (
+            "gemma4",
+            "gemma4_unified",
+        ):
+            return hf_impl
+        return {"": "sdpa", "text_config": hf_impl}
 
     def _resolve_flash_attention_4(self, hf_impl):
         """Prefer native FA4 over the FA2 path when FA4 is installed and usable.

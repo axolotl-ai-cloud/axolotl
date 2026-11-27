@@ -37,6 +37,8 @@ def _make_fused_forward():
         past_key_values=None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        # transformers 5.24 passes the KV cache as `cache`
+        past_key_values = kwargs.pop("cache", past_key_values)
         from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
         from transformers.models.qwen3_moe.modeling_qwen3_moe import (
             eager_attention_forward,

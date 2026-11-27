@@ -173,6 +173,16 @@ def ensure_mamba_kernels_loaded(target_module):
     )
 
 
+def _has_previous_state(cache) -> bool:
+    state = getattr(cache, "has_previous_state", False)
+    if not callable(state):
+        return bool(state)
+    try:
+        return state()
+    except ValueError:  # raised when the cache has no linear-attention layers
+        return cache.get_seq_length() > 0
+
+
 def patch_model_forward_seq_idx(model_cls) -> None:
     """Inject ``seq_idx`` (from ``position_ids``) into ``model_cls.forward`` kwargs.
 
@@ -191,14 +201,12 @@ def patch_model_forward_seq_idx(model_cls) -> None:
         if position_ids is None and len(args) > 2:
             position_ids = args[2]
 
-        past_key_values = kwargs.get("past_key_values")
+        past_key_values = kwargs.get("cache", kwargs.get("past_key_values"))
         if past_key_values is None and len(args) > 3:
             past_key_values = args[3]
 
-        is_decoding = (
-            past_key_values is not None
-            and hasattr(past_key_values, "has_previous_state")
-            and past_key_values.has_previous_state
+        is_decoding = past_key_values is not None and _has_previous_state(
+            past_key_values
         )
 
         if position_ids is not None and not is_decoding and "seq_idx" not in kwargs:

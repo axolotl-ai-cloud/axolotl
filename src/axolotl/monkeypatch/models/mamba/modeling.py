@@ -26,6 +26,7 @@ from axolotl.monkeypatch.models.mamba_utils import (
     kernelized_copy,
     require_seq_idx_kernels,
 )
+from axolotl.monkeypatch.utils import set_layer_forward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -230,14 +231,15 @@ def _patch_causal_lm(causal_lm_cls) -> None:
     @functools.wraps(original_forward)
     def patched_forward(self, *args, **kwargs):
         position_ids = kwargs.pop("position_ids", None)
+        cache = kwargs.get("cache", kwargs.get("cache_params"))
         segments = None
         if (
             position_ids is not None
-            and kwargs.get("cache_params") is not None
+            and cache is not None
             and (position_ids[:, 1:] == 0).any()
         ):
             raise ValueError("Packed Mamba requires uncached inputs")
-        if position_ids is not None and kwargs.get("cache_params") is None:
+        if position_ids is not None and cache is None:
             segments = PackedSegments(get_seq_idx(position_ids))
             # a packed eval batch would otherwise get a fresh cache and the stock path
             kwargs["use_cache"] = False
@@ -268,15 +270,13 @@ def _patch_block(block_cls) -> None:
     original_forward = block_cls.forward
 
     @functools.wraps(original_forward)
-    def patched_forward(
-        self, hidden_states, cache_params=None, attention_mask=None, **kwargs
-    ):
+    def patched_forward(self, hidden_states, cache=None, attention_mask=None, **kwargs):
         segments = getattr(self, "_axolotl_segments", None)
-        if segments is None or cache_params is not None:
+        if segments is None or cache is not None:
             return original_forward(
                 self,
                 hidden_states,
-                cache_params=cache_params,
+                cache=cache,
                 attention_mask=attention_mask,
                 **kwargs,
             )
@@ -286,7 +286,7 @@ def _patch_block(block_cls) -> None:
             residual = residual.to(torch.float32)
         hidden_states = self.mixer(
             hidden_states,
-            cache_params=cache_params,
+            cache=cache,
             attention_mask=attention_mask,
             segments=segments,
             **kwargs,
@@ -294,7 +294,7 @@ def _patch_block(block_cls) -> None:
         return residual + hidden_states
 
     patched_forward._axolotl_seq_idx_patch = True
-    block_cls.forward = patched_forward
+    set_layer_forward(block_cls, patched_forward)
 
 
 def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
@@ -334,7 +334,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
     def patched_forward(
         self,
         hidden_states,
-        cache_params=None,
+        cache=None,
         attention_mask=None,
         segments=None,
         **kwargs,
@@ -343,16 +343,16 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
             return original_forward(
                 self,
                 hidden_states,
-                cache_params=cache_params,
+                cache=cache,
                 attention_mask=attention_mask,
                 segments=segments,
                 **kwargs,
             )
-        if segments is None or cache_params is not None:
+        if segments is None or cache is not None:
             return original_forward(
                 self,
                 hidden_states,
-                cache_params=cache_params,
+                cache=cache,
                 attention_mask=attention_mask,
                 **kwargs,
             )
@@ -362,7 +362,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
             return original_forward(
                 self,
                 hidden_states,
-                cache_params=cache_params,
+                cache=cache,
                 attention_mask=attention_mask,
                 **kwargs,
             )
@@ -370,7 +370,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
             return original_forward(
                 self,
                 hidden_states,
-                cache_params=cache_params,
+                cache=cache,
                 attention_mask=attention_mask,
                 **kwargs,
             )

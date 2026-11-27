@@ -201,11 +201,9 @@ class DistributedParallelMixin(Trainer):
             )
         if state_dict is None:
             metadata = getattr(self.model, "_axolotl_native_nvfp4_metadata", None)
-            # transformers>=5.20 already runs save_pretrained on every rank for load-time TP models
-            self._axolotl_save_joined_all_ranks = (
-                getattr(self, "is_distributed_loading_by_transformers", False)
-                and not self.is_fsdp_enabled
-                and not getattr(self, "is_deepspeed_enabled", False)
+            # transformers>=5.24 runs _save (and so save_pretrained) on every rank for load-time TP models
+            self._axolotl_save_joined_all_ranks = getattr(
+                self, "is_distributed_loading_by_transformers", False
             )
             result = super().save_model(output_dir, _internal_call)
             if metadata and self.args.should_save:

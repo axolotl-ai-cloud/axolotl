@@ -57,7 +57,7 @@ description: Frequently asked questions
 
 **Q: vLLM is not working with Axolotl**
 
-> A: Axolotl requires `vllm>=0.30.0`, which pins torch 2.13.0. Please ensure you use the right version.
+> A: Axolotl requires `vllm>=0.34.0`, which pins torch 2.14.0. Please ensure you use the right version.
 
 **Q: FA2 2.8.0 `undefined symbol` runtime error on CUDA 12.4**
 

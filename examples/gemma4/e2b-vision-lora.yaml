@@ -47,7 +47,7 @@ activation_checkpointing:
   enabled: true
   reentrant: false
 logging_steps: 1
-attn_implementation: sdpa
+# leave attn_implementation unset: the audio tower is eager-only, text/vision auto-pick sdpa
 
 warmup_ratio: 0.1
 weight_decay: 0.0

@@ -17,6 +17,7 @@ from axolotl.monkeypatch.models.mamba_utils import (
     is_cp_active,
     mamba2_seq_idx_kernels_available,
 )
+from axolotl.monkeypatch.utils import set_layer_forward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -98,7 +99,7 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
     def patched_block_forward(
         self,
         hidden_states,
-        past_key_values=None,
+        cache=None,
         attention_mask=None,
         position_ids=None,
         use_cache=False,
@@ -108,10 +109,7 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
         hidden_states = self.norm(hidden_states.to(dtype=self.norm.weight.dtype))
 
         if self.block_type == "linear_attention":
-            is_decoding = (
-                past_key_values is not None
-                and past_key_values.has_previous_state(self.layer_idx)
-            )
+            is_decoding = cache is not None and cache.has_previous_state(self.layer_idx)
             seq_idx = (
                 get_seq_idx(position_ids)
                 if position_ids is not None and not is_decoding
@@ -123,14 +121,14 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
                 assert_mamba2_scan_honours_seq_idx(mod)
             hidden_states = self.mixer(
                 hidden_states,
-                cache_params=past_key_values,
+                cache=cache,
                 attention_mask=attention_mask,
                 seq_idx=seq_idx,
             )
         elif self.block_type == "full_attention":
             hidden_states, _ = self.mixer(
                 hidden_states=hidden_states,
-                past_key_values=past_key_values,
+                cache=cache,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 use_cache=use_cache,
@@ -143,7 +141,7 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
         return hidden_states
 
     patched_block_forward._axolotl_seq_idx_patch = True
-    NemotronHBlock.forward = patched_block_forward
+    set_layer_forward(NemotronHBlock, patched_block_forward)
 
     guard_nemotron_h_fused_scan(mod)
 

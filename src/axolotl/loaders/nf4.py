@@ -376,7 +376,22 @@ def staged_nf4_loading(
             and "expert" in target_name.lower()
         )
         linear = isinstance(module, nn.Linear) and name == "weight"
-        original(model, target_name, value, *args, **kwargs)
+        prequantized = getattr(value, "quant_state", None) is not None
+        if prequantized and nf4_should_quantize(
+            target_name, linear=linear, expert=expert, skips=skips
+        ):
+            # transformers only shape-checks packed bytes on Linear4bit; check the
+            # unpacked shape here instead
+            loading_info = args[0]
+            loading_info.missing_keys.discard(target_name)
+            expected = getattr(module, name).shape
+            if tuple(value.quant_state.shape) != tuple(expected):
+                loading_info.mismatched_keys.add(
+                    (target_name, value.quant_state.shape, expected)
+                )
+                return
+        else:
+            original(model, target_name, value, *args, **kwargs)
         if (linear or expert) and not value.is_meta:
             for key in excluded:
                 if nf4_skip_matches(target_name, key):
